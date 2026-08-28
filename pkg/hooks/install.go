@@ -134,11 +134,15 @@ func hasCommand(entries []any, command string) bool {
 }
 
 // Install reads settingsPath (a missing file is treated as {}), merges in
-// quipu's managed hooks for binPath, and — unless dryRun — backs up the
-// original file (only if it existed) to "<settingsPath>.quipu-bak-<unix
-// now>" before overwriting it with the merged, pretty-printed (2-space)
-// document. It returns the merged document either way, so --dry-run can
-// print exactly what would be written.
+// quipu's managed hooks for binPath, and — unless dryRun, or nothing
+// actually changed (already installed) — backs up the original file (only
+// if it existed) to "<settingsPath>.quipu-bak-<unix now>" before
+// overwriting it with the merged, pretty-printed (2-space) document. It
+// returns the merged document either way, so --dry-run can print exactly
+// what would be written. wrote is false whenever no write happened, either
+// because dryRun was requested or because settingsPath already had every
+// managed hook installed — the latter also means no backup file is written,
+// so a no-op re-install never accumulates one.
 func Install(settingsPath, binPath string, dryRun bool, now time.Time) (merged []byte, wrote bool, err error) {
 	existing, readErr := os.ReadFile(settingsPath)
 	existed := readErr == nil
@@ -146,11 +150,12 @@ func Install(settingsPath, binPath string, dryRun bool, now time.Time) (merged [
 		return nil, false, fmt.Errorf("hooks: read %s: %w", settingsPath, readErr)
 	}
 
-	merged, _, err = MergeSettings(existing, binPath)
+	var changed bool
+	merged, changed, err = MergeSettings(existing, binPath)
 	if err != nil {
 		return nil, false, err
 	}
-	if dryRun {
+	if dryRun || !changed {
 		return merged, false, nil
 	}
 

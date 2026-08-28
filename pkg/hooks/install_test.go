@@ -314,3 +314,37 @@ func TestInstallIdempotentAcrossTwoRealInstalls(t *testing.T) {
 		}
 	}
 }
+
+// TestInstallSkipsWriteAndBackupWhenAlreadyInstalled guards against the
+// review nit where re-running `quipu hooks install` (or `quipu setup`)
+// against an already-installed settings.json accumulates a fresh
+// "settings.json.quipu-bak-<unix>" backup file every time even though
+// nothing changed: Install must skip both the write and the backup when
+// MergeSettings reports no change, and report wrote=false so callers can
+// say "already installed".
+func TestInstallSkipsWriteAndBackupWhenAlreadyInstalled(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "settings.json")
+	now := time.Date(2026, 8, 27, 12, 0, 0, 0, time.UTC)
+
+	if _, wrote, err := Install(path, "quipu", false, now); err != nil {
+		t.Fatalf("Install #1: %v", err)
+	} else if !wrote {
+		t.Fatalf("expected wrote=true for the first install")
+	}
+
+	if _, wrote, err := Install(path, "quipu", false, now.Add(time.Hour)); err != nil {
+		t.Fatalf("Install #2 (no-op re-install): %v", err)
+	} else if wrote {
+		t.Fatalf("expected wrote=false for a no-op re-install")
+	}
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("ReadDir: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("expected only settings.json (no backup file) after a no-op re-install, got %v", entries)
+	}
+}
