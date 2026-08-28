@@ -105,10 +105,10 @@ func (m Model) detailView() string {
 	fmt.Fprintf(&b, "resume: %s\n", resumeCommand(d.Sessions))
 
 	b.WriteString("\nopen tasks:\n")
-	writeOpenTasks(&b, d.Tasks)
+	writeOpenTasks(&b, d.Tasks, openTasksLimit)
 
 	b.WriteString("\nrecent events:\n")
-	writeRecentEvents(&b, d.Events, 5)
+	writeRecentEvents(&b, d.Events, recentEventsLimit)
 
 	b.WriteString("\n")
 	b.WriteString(helpStyle.Render("esc back · q quit"))
@@ -116,17 +116,33 @@ func (m Model) detailView() string {
 	return b.String()
 }
 
-func writeOpenTasks(b *strings.Builder, tasks []store.Task) {
-	any := false
+// openTasksLimit and recentEventsLimit cap how many lines the detail pane's
+// open-tasks and recent-events lists show, each with a trailing "... and N
+// more" line rather than growing unbounded (a worktree with hundreds of
+// open tasks or events would otherwise blow past the terminal height).
+const (
+	openTasksLimit    = 10
+	recentEventsLimit = 5
+)
+
+func writeOpenTasks(b *strings.Builder, tasks []store.Task, limit int) {
+	var open []store.Task
 	for _, t := range tasks {
 		if t.Status == "done" || t.Status == "dropped" {
 			continue
 		}
-		any = true
-		fmt.Fprintf(b, "  qp-%d [%s] %s\n", t.ID, t.Status, t.Subject)
+		open = append(open, t)
 	}
-	if !any {
+	if len(open) == 0 {
 		b.WriteString("  (none)\n")
+		return
+	}
+	for i, t := range open {
+		if i >= limit {
+			fmt.Fprintf(b, "  ... and %d more\n", len(open)-limit)
+			break
+		}
+		fmt.Fprintf(b, "  qp-%d [%s] %s\n", t.ID, t.Status, t.Subject)
 	}
 }
 
@@ -137,6 +153,7 @@ func writeRecentEvents(b *strings.Builder, events []store.Event, limit int) {
 	}
 	for i, ev := range events {
 		if i >= limit {
+			fmt.Fprintf(b, "  ... and %d more\n", len(events)-limit)
 			break
 		}
 		fmt.Fprintf(b, "  %s  %s: %s\n", ev.CreatedAt, ev.Kind, ev.Body)

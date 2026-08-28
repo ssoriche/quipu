@@ -324,3 +324,121 @@ func TestRowsLoadedErrorSurfacesWithoutPanicking(t *testing.T) {
 		t.Fatalf("expected ready=false after a failed initial load")
 	}
 }
+
+func TestWindowSizeMsgResizesTable(t *testing.T) {
+	rec := &recorder{}
+	m := withRows(t, NewModel(context.Background(), fakeDeps(rec)), sampleRows())
+	before := m.table.Height()
+
+	nm, cmd := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	m = nm.(Model)
+	if cmd != nil {
+		t.Fatalf("expected no command from a window-size message, got %v", cmd)
+	}
+	if m.table.Height() == before {
+		t.Fatalf("expected table height to change from %d after a WindowSizeMsg", before)
+	}
+	// table.SetHeight itself reserves a line for the table's own header
+	// row on top of chromeLines, so the exact relationship is
+	// "at most" rather than an exact subtraction.
+	if got, max := m.table.Height(), 40-chromeLines; got <= 0 || got > max {
+		t.Fatalf("table height = %d, want in (0, %d] (window height minus chrome, minus the table's header row)", got, max)
+	}
+
+	// The PURPOSE column should have grown to use the wider terminal
+	// rather than staying pinned at its narrow default.
+	cols := m.table.Columns()
+	var purposeWidth int
+	for _, c := range cols {
+		if c.Title == "PURPOSE" {
+			purposeWidth = c.Width
+		}
+	}
+	if purposeWidth <= defaultPurposeWidth {
+		t.Fatalf("PURPOSE column width = %d, want it to grow past the default %d for a 120-wide window", purposeWidth, defaultPurposeWidth)
+	}
+
+	// A narrow window shrinks the table height and the PURPOSE column back
+	// down, but never below the minimum.
+	tallHeight := m.table.Height()
+	nm, _ = m.Update(tea.WindowSizeMsg{Width: 10, Height: 10})
+	m = nm.(Model)
+	if m.table.Height() >= tallHeight {
+		t.Fatalf("table height = %d, want less than %d after shrinking the window", m.table.Height(), tallHeight)
+	}
+	cols = m.table.Columns()
+	for _, c := range cols {
+		if c.Title == "PURPOSE" && c.Width < minPurposeWidth {
+			t.Fatalf("PURPOSE column width = %d, want at least the minimum %d", c.Width, minPurposeWidth)
+		}
+	}
+}
+
+func TestCtrlCQuitsFromEveryMode(t *testing.T) {
+	rec := &recorder{}
+	base := withRows(t, NewModel(context.Background(), fakeDeps(rec)), sampleRows())
+	ctrlC := tea.KeyMsg{Type: tea.KeyCtrlC}
+
+	assertQuits := func(t *testing.T, m Model) {
+		t.Helper()
+		_, cmd := m.Update(ctrlC)
+		if cmd == nil {
+			t.Fatalf("expected ctrl+c to return a quit command")
+		}
+		if _, ok := cmd().(tea.QuitMsg); !ok {
+			t.Fatalf("expected cmd() to be a tea.QuitMsg")
+		}
+	}
+
+	t.Run("list mode", func(t *testing.T) {
+		assertQuits(t, base)
+	})
+
+	t.Run("filtering mode", func(t *testing.T) {
+		nm, _ := base.Update(keyRunes("/"))
+		assertQuits(t, nm.(Model))
+	})
+
+	t.Run("confirm mode", func(t *testing.T) {
+		nm, _ := base.Update(keyRunes("R"))
+		assertQuits(t, nm.(Model))
+	})
+
+	t.Run("detail mode", func(t *testing.T) {
+		nm, cmd := base.Update(tea.KeyMsg{Type: tea.KeyEnter})
+		m := nm.(Model)
+		runCmd(t, cmd)
+		assertQuits(t, m)
+	})
+}
+
+func TestFilterNarrowingToZeroRowsDoesNotPanic(t *testing.T) {
+	rec := &recorder{}
+	m := withRows(t, NewModel(context.Background(), fakeDeps(rec)), sampleRows())
+
+	nm, _ := m.Update(keyRunes("/"))
+	m = nm.(Model)
+	for _, ch := range []string{"z", "z", "z"} {
+		nm, _ = m.Update(keyRunes(ch))
+		m = nm.(Model)
+	}
+	if len(m.filtered) != 0 {
+		t.Fatalf("filtered = %+v, want no matches for %q", m.filtered, m.filterQuery)
+	}
+
+	row, ok := m.selectedRow()
+	if ok {
+		t.Fatalf("selectedRow() = %+v, true; want ok=false when filtered is empty", row)
+	}
+
+	// Navigating and restarting against an empty filtered set must not
+	// panic either.
+	nm, cmd := m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	m = nm.(Model)
+	_ = cmd
+	nm, cmd = m.Update(keyRunes("r"))
+	m = nm.(Model)
+	if cmd != nil {
+		t.Fatalf("expected 'r' with no selection to be a no-op, got a command")
+	}
+}

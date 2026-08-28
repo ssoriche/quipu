@@ -74,18 +74,41 @@ type Model struct {
 	detailName string // "" means the list view is showing, not the detail pane
 	detail     *store.WorktreeDetail
 
+	width, height int // last known terminal size (0 until the first WindowSizeMsg)
+
 	scanning bool
 	ready    bool // at least one LoadRows has completed
 	status   string
 	err      error
 }
 
+// chromeLines is how many lines of the terminal a WindowSizeMsg's height
+// must give up to everything around the table itself: the status line, the
+// help line, and a blank line separating them from the table. The table
+// widget's own header row is accounted for separately (table.SetHeight
+// already subtracts it).
+const chromeLines = 4
+
+// Column widths. Every column but PURPOSE is a fixed width; PURPOSE takes
+// whatever room is left in the terminal (defaultPurposeWidth before the
+// first WindowSizeMsg arrives, never below minPurposeWidth after).
+const (
+	nameWidth           = 24
+	stateWidth          = 10
+	dirtyWidth          = 5
+	liveWidth           = 4
+	tasksWidth          = 6
+	lastActivityWidth   = 20
+	defaultPurposeWidth = 30
+	minPurposeWidth     = 10
+)
+
 // NewModel builds a dashboard Model. ctx bounds every Deps call the
 // dashboard makes for its lifetime (there is no per-keypress context, since
 // bubbletea commands take none).
 func NewModel(ctx context.Context, deps Deps) Model {
 	t := table.New(
-		table.WithColumns(columns()),
+		table.WithColumns(columnsForWidth(0)),
 		table.WithFocused(true),
 		table.WithHeight(20),
 	)
@@ -97,15 +120,28 @@ func NewModel(ctx context.Context, deps Deps) Model {
 	}
 }
 
-func columns() []table.Column {
+// columnsForWidth renders the table's columns for a terminal of the given
+// width, growing or shrinking only PURPOSE to fill (or fit) it. width <= 0
+// (no WindowSizeMsg received yet) uses defaultPurposeWidth.
+func columnsForWidth(width int) []table.Column {
+	const fixedColumns = 6     // every column except PURPOSE
+	const paddingPerColumn = 2 // bubbles/table's default Cell style: Padding(0, 1)
+
+	purpose := defaultPurposeWidth
+	if width > 0 {
+		fixed := nameWidth + stateWidth + dirtyWidth + liveWidth + tasksWidth + lastActivityWidth
+		available := width - fixed - (fixedColumns+1)*paddingPerColumn
+		purpose = max(available, minPurposeWidth)
+	}
+
 	return []table.Column{
-		{Title: "NAME", Width: 24},
-		{Title: "STATE", Width: 10},
-		{Title: "DIRTY", Width: 5},
-		{Title: "LIVE", Width: 4},
-		{Title: "TASKS", Width: 6},
-		{Title: "PURPOSE", Width: 30},
-		{Title: "LAST ACTIVITY", Width: 20},
+		{Title: "NAME", Width: nameWidth},
+		{Title: "STATE", Width: stateWidth},
+		{Title: "DIRTY", Width: dirtyWidth},
+		{Title: "LIVE", Width: liveWidth},
+		{Title: "TASKS", Width: tasksWidth},
+		{Title: "PURPOSE", Width: purpose},
+		{Title: "LAST ACTIVITY", Width: lastActivityWidth},
 	}
 }
 
@@ -202,7 +238,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleSpinnerTick(msg)
 	case tea.KeyMsg:
 		return m.handleKey(msg)
+	case tea.WindowSizeMsg:
+		return m.handleWindowSize(msg)
 	}
+	return m, nil
+}
+
+// handleWindowSize resizes the table to fit the terminal: its height
+// shrinks to leave room for the status/help chrome around it, and its
+// PURPOSE column grows or shrinks to use whatever width is left over from
+// the other, fixed-width columns.
+func (m Model) handleWindowSize(msg tea.WindowSizeMsg) (Model, tea.Cmd) {
+	m.width, m.height = msg.Width, msg.Height
+
+	m.table.SetHeight(max(msg.Height-chromeLines, 1))
+	m.table.SetWidth(msg.Width)
+	m.table.SetColumns(columnsForWidth(msg.Width))
 	return m, nil
 }
 
@@ -276,6 +327,9 @@ func (m Model) handleSpinnerTick(msg spinner.TickMsg) (Model, tea.Cmd) {
 }
 
 func (m Model) handleKey(msg tea.KeyMsg) (Model, tea.Cmd) {
+	if msg.Type == tea.KeyCtrlC {
+		return m, tea.Quit
+	}
 	switch {
 	case m.filtering:
 		return m.handleFilterKey(msg)

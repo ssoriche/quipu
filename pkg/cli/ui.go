@@ -42,7 +42,7 @@ func runUI(e env, args []string) int {
 		RestartAll: func(ctx context.Context) (string, error) { return restartUIAll(ctx, e, db) },
 	}
 
-	p := tea.NewProgram(ui.NewModel(e.ctx, deps))
+	p := tea.NewProgram(ui.NewModel(e.ctx, deps), tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
 		return errf(e, 2, "%v", err)
 	}
