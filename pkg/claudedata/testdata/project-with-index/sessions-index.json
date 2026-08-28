@@ -1,0 +1,18 @@
+{
+    "entries": [
+        {
+            "sessionId": "sess-1",
+            "firstPrompt": "Fix the bug",
+            "summary": "Fixed a null pointer in foo.go",
+            "gitBranch": "feature/x",
+            "modified": "2026-01-01T00:00:00Z"
+        },
+        {
+            "sessionId": "sess-2",
+            "firstPrompt": "Add tests",
+            "summary": "Added tests for the foo package",
+            "gitBranch": "feature/y",
+            "modified": "2026-01-02T00:00:00Z"
+        }
+    ]
+}
