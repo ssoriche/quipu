@@ -38,13 +38,14 @@ be clean before installing.
 ## Quickstart
 
 ```
-quipu init /Users/alice/work   # register a bare-layout container, scan it immediately
+quipu setup /Users/alice/work -y      # register+scan, wire up Claude hooks, install git hooks
 quipu scan                            # (re)discover worktrees + mine Claude data
 quipu ui                              # bubbletea dashboard
 ```
 
-`quipu init` accepts no argument too — it walks up from the current
-directory looking for a container (a directory holding `.bare/`).
+`quipu setup` accepts no argument too — it walks up from the current
+directory looking for a container (a directory holding `.bare/`), same as
+`quipu init`.
 
 ## Post-crash recovery
 
@@ -75,6 +76,11 @@ a registered container. Task ids are shown and accepted as `qp-<id>` (the
 `qp-` prefix is optional on input).
 
 ```
+quipu setup [container] [-y|--yes] [--no-git-hooks]
+    One-shot best-practices onboarding: register+scan the container,
+    install the Claude Code hooks, append the CLAUDE.md snippet, and
+    install the opt-in git hooks — see "Setup" below.
+
 quipu init [path]
     Register a bare-layout container (path, or detected by walking up from
     cwd) and run an implicit scan.
@@ -154,7 +160,37 @@ quipu claudemd
     Print just the CLAUDE.md snippet (see below).
 ```
 
-## Hooks setup
+## Setup
+
+```
+quipu setup /Users/alice/work -y
+```
+
+is the one-shot way to onboard a container: it runs four steps, in order,
+each printed as a numbered header:
+
+1. **Register + scan** the container (same as `quipu init`; a no-op
+   register if it's already registered — just rescans).
+2. **Install the Claude Code hooks** into `~/.claude/settings.json` (same
+   as `quipu hooks install`; idempotent — a re-run that changes nothing
+   skips the write and never accumulates a backup file).
+3. **Append the CLAUDE.md snippet** to `~/.claude/CLAUDE.md`, creating the
+   file if it doesn't exist (idempotent — skipped if the snippet's heading
+   is already present).
+4. **Install the opt-in git hooks** into `<container>/.bare/hooks/` (same
+   as `quipu hooks install --git`). Skipped entirely with `--no-git-hooks`.
+   A refusal here (a foreign hook, or `core.hooksPath` configured) is
+   reported as a warning, not a failure — it's an optional nicety, so
+   `quipu setup` still exits 0.
+
+Without `-y`/`--yes`, each step prints what it's about to do and asks
+`proceed? [y/N]` before running; declining skips just that step (the rest
+still run). A summary line per step (done/skipped/warning) is printed at
+the end. Exit codes: 0 on success (even with warnings or skips), 1 for
+invalid arguments, 2 for a hard failure (database, register/scan, or
+settings write).
+
+Each step is also available individually, for à la carte use or scripting:
 
 ```
 quipu hooks install
@@ -162,12 +198,12 @@ quipu hooks install
 
 merges quipu's `SessionStart`/`SessionEnd`/`Stop` hooks into
 `~/.claude/settings.json` (backing up the existing file to
-`settings.json.quipu-bak-<unix-time>` first; safe to re-run — it's
-idempotent and never duplicates an entry). Every hook it installs runs
-`quipu hook <event>` and exits in well under 50ms with no output whenever
-the current working directory isn't inside a registered container, so it's
-safe to install globally, once, for every Claude Code session on the
-machine.
+`settings.json.quipu-bak-<unix-time>` first — only if something actually
+changed; safe to re-run — it's idempotent and never duplicates an entry or
+writes a redundant backup). Every hook it installs runs `quipu hook
+<event>` and exits in well under 50ms with no output whenever the current
+working directory isn't inside a registered container, so it's safe to
+install globally, once, for every Claude Code session on the machine.
 
 To also auto-register newly created worktrees (closing the gap between
 `git wadd` and the next `quipu scan`) and record commit activity as it

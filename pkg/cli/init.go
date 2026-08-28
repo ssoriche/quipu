@@ -9,6 +9,26 @@ import (
 	"github.com/ssoriche/quipu/pkg/store"
 )
 
+// registerAndScan registers container in db (a no-op if it's already
+// registered — store.RegisterContainer upserts) and runs the implicit scan
+// every "register a container" entry point relies on to have something to
+// show immediately: shared by runInit and runSetup's register+scan step, so
+// both report progress on e.stderr identically.
+func registerAndScan(e env, db *store.DB, container string) (scan.Summary, error) {
+	name := filepath.Base(container)
+	if err := store.RegisterContainer(db, container, name, e.now()); err != nil {
+		return scan.Summary{}, fmt.Errorf("register %s: %w", container, err)
+	}
+
+	progress, doneProgress := newProgressFunc(e.stderr, isTerminalWriter(e.stderr))
+	sum, err := scan.Scan(e.ctx, scan.Deps{DB: db, Runner: e.runner, Home: e.home, Now: e.now}, scan.Options{Container: container, Progress: progress})
+	doneProgress()
+	if err != nil {
+		return scan.Summary{}, fmt.Errorf("scan %s: %w", container, err)
+	}
+	return sum, nil
+}
+
 // initResultDTO is `quipu init --json`'s output shape.
 type initResultDTO struct {
 	Container     string   `json:"container"`
@@ -44,21 +64,15 @@ func runInit(e env, args []string) int {
 	}
 	defer db.Close()
 
-	name := filepath.Base(container)
-	if err := store.RegisterContainer(db, container, name, e.now()); err != nil {
-		return errf(e, 2, "%v", err)
-	}
-
-	progress, doneProgress := newProgressFunc(e.stderr, isTerminalWriter(e.stderr))
-	sum, err := scan.Scan(e.ctx, scan.Deps{DB: db, Runner: e.runner, Home: e.home, Now: e.now}, scan.Options{Container: container, Progress: progress})
-	doneProgress()
+	sum, err := registerAndScan(e, db, container)
 	if err != nil {
-		return errf(e, 2, "scan: %v", err)
+		return errf(e, 2, "%v", err)
 	}
 	for _, w := range sum.Warnings {
 		warnf(e, "%s", w)
 	}
 
+	name := filepath.Base(container)
 	if *jsonFlag {
 		return writeJSONOut(e, initResultDTO{
 			Container: container, Name: name, Worktrees: sum.Worktrees,

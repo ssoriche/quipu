@@ -3,6 +3,7 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"path/filepath"
 
 	"github.com/ssoriche/quipu/pkg/hooks"
@@ -68,17 +69,44 @@ func runHooksInstall(e env, args []string) int {
 		return runHooksInstallGit(e, fs.Args(), *dryRun)
 	}
 
-	settingsPath := filepath.Join(e.home, ".claude", "settings.json")
-	merged, wrote, err := hooks.Install(settingsPath, quipuBin, *dryRun, e.now())
-	if err != nil {
-		return errf(e, 2, "%v", err)
-	}
 	if *dryRun {
+		settingsPath := filepath.Join(e.home, ".claude", "settings.json")
+		merged, _, err := hooks.Install(settingsPath, quipuBin, true, e.now())
+		if err != nil {
+			return errf(e, 2, "%v", err)
+		}
 		fmt.Fprintln(e.stdout, string(merged))
 		return 0
+	}
+
+	settingsPath, wrote, _, err := installClaudeHooksSettings(e)
+	if err != nil {
+		return errf(e, 2, "%v", err)
 	}
 	if wrote {
 		fmt.Fprintf(e.stdout, "installed quipu hooks into %s\n", settingsPath)
 	}
 	return 0
+}
+
+// installClaudeHooksSettings merges quipu's managed SessionStart/
+// SessionEnd/Stop hooks into ~/.claude/settings.json, writing (and backing
+// up any pre-existing file) only if hooks.Install reports that something
+// actually changed — a no-op re-install touches nothing. Shared by
+// runHooksInstall and runSetup's Claude-hooks step. backupPath is "" unless
+// a write happened and settingsPath already existed beforehand.
+func installClaudeHooksSettings(e env) (settingsPath string, wrote bool, backupPath string, err error) {
+	settingsPath = filepath.Join(e.home, ".claude", "settings.json")
+	_, existedErr := os.Stat(settingsPath)
+	existed := existedErr == nil
+	now := e.now()
+
+	_, wrote, err = hooks.Install(settingsPath, quipuBin, false, now)
+	if err != nil {
+		return settingsPath, false, "", err
+	}
+	if wrote && existed {
+		backupPath = fmt.Sprintf("%s.quipu-bak-%d", settingsPath, now.Unix())
+	}
+	return settingsPath, wrote, backupPath, nil
 }

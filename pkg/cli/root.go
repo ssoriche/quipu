@@ -16,6 +16,7 @@ import (
 // commands lists the spec's CLI surface, in the order they should appear in
 // usage output.
 var commands = []string{
+	"setup",
 	"init",
 	"scan",
 	"list",
@@ -34,6 +35,7 @@ var commands = []string{
 
 // registry maps each implemented subcommand to its handler.
 var registry = map[string]func(env, []string) int{
+	"setup":    runSetup,
 	"init":     runInit,
 	"scan":     runScanCmd,
 	"list":     runList,

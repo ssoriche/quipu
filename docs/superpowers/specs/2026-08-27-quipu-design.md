@@ -248,6 +248,9 @@ anchoring: names never contain `/`).
 updates when stderr is a TTY, one summary line per phase otherwise.
 
 ```
+quipu setup [container] [-y] [--no-git-hooks]  one-shot onboarding: register+
+                               scan, install Claude hooks, append the
+                               CLAUDE.md snippet, install git hooks
 quipu init [path]              register container (default: detect from cwd)
 quipu scan [--fetch] [--forge] [--worktree <w>]
 quipu list [--state s] [--container c]     table: name state dirty purpose
