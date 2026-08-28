@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -350,6 +351,81 @@ func TestScanIndexFallbackForPrunedSession(t *testing.T) {
 	}
 	if feature.Purpose != "Refactored the thing" || feature.PurposeSource != "index-summary" {
 		t.Fatalf("purpose = (%q, %q), want (Refactored the thing, index-summary)", feature.Purpose, feature.PurposeSource)
+	}
+}
+
+// TestScanFetchWarningOnFailure covers Scan's --fetch behavior when `git
+// fetch --prune origin` fails: the design spec requires this to be a
+// warning, never an error, and it must not stop the rest of the scan (the
+// container's worktrees are still classified and upserted).
+func TestScanFetchWarningOnFailure(t *testing.T) {
+	container := gittest.MakeBareLayout(t)
+	home := t.TempDir()
+	db := openScanTestDB(t)
+	now := time.Date(2026, 8, 27, 12, 0, 0, 0, time.UTC)
+
+	if err := store.RegisterContainer(db, container, "container", now); err != nil {
+		t.Fatalf("RegisterContainer: %v", err)
+	}
+
+	// Point origin at a path that can never be fetched from, so `git fetch`
+	// fails deterministically.
+	runGitFixture(t, container, "remote", "set-url", "origin", filepath.Join(t.TempDir(), "nonexistent-origin"))
+
+	d := Deps{DB: db, Runner: execx.OSRunner{}, Home: home, Now: func() time.Time { return now }}
+	sum, err := Scan(context.Background(), d, Options{Container: container, Fetch: true})
+	if err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
+	if sum.Worktrees != 2 {
+		t.Fatalf("Worktrees = %d, want 2 (fetch failure must not abort the rest of the scan)", sum.Worktrees)
+	}
+
+	found := false
+	for _, w := range sum.Warnings {
+		if strings.Contains(w, "fetch") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected a fetch-failure warning, got %+v", sum.Warnings)
+	}
+
+	// The worktrees must still have been classified despite the fetch
+	// failure (this is what "never abort the rest of the scan" means).
+	mainWt, err := store.GetWorktreeByContainerAndName(db, container, "main")
+	if err != nil {
+		t.Fatalf("GetWorktreeByContainerAndName main: %v", err)
+	}
+	if mainWt.State != "protected" {
+		t.Fatalf("main.State = %q, want protected", mainWt.State)
+	}
+}
+
+// TestScanFetchHappyPath covers the successful --fetch case: no warning is
+// recorded, and worktrees are scanned normally.
+func TestScanFetchHappyPath(t *testing.T) {
+	container := gittest.MakeBareLayout(t)
+	home := t.TempDir()
+	db := openScanTestDB(t)
+	now := time.Date(2026, 8, 27, 12, 0, 0, 0, time.UTC)
+
+	if err := store.RegisterContainer(db, container, "container", now); err != nil {
+		t.Fatalf("RegisterContainer: %v", err)
+	}
+
+	d := Deps{DB: db, Runner: execx.OSRunner{}, Home: home, Now: func() time.Time { return now }}
+	sum, err := Scan(context.Background(), d, Options{Container: container, Fetch: true})
+	if err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
+	if sum.Worktrees != 2 {
+		t.Fatalf("Worktrees = %d, want 2", sum.Worktrees)
+	}
+	for _, w := range sum.Warnings {
+		if strings.Contains(w, "fetch") {
+			t.Fatalf("unexpected fetch warning on the happy path: %+v", sum.Warnings)
+		}
 	}
 }
 
