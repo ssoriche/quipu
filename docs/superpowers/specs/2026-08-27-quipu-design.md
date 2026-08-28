@@ -244,6 +244,9 @@ Worktree argument resolution: explicit name/path, else walk up from cwd to
 find the containing worktree of a registered container (ADR-0002-style
 anchoring: names never contain `/`).
 
+`scan`/`init` report per-worktree progress on stderr as they run: in-place
+updates when stderr is a TTY, one summary line per phase otherwise.
+
 ```
 quipu init [path]              register container (default: detect from cwd)
 quipu scan [--fetch] [--forge] [--worktree <w>]

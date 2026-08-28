@@ -32,7 +32,10 @@ func runScanCmd(e env, args []string) int {
 		opts.Worktree = w.Path
 	}
 
+	progress, doneProgress := newProgressFunc(e.stderr, isTerminalWriter(e.stderr))
+	opts.Progress = progress
 	sum, err := scan.Scan(e.ctx, scan.Deps{DB: db, Runner: e.runner, Home: e.home, Now: e.now}, opts)
+	doneProgress()
 	if err != nil {
 		return errf(e, 2, "%v", err)
 	}

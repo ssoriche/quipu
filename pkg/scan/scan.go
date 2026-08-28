@@ -37,10 +37,38 @@ type Deps struct {
 
 // Options narrows what Scan operates on.
 type Options struct {
-	Container string // scan only this container path; empty = every registered container
-	Worktree  string // scan only the worktree matching this path or name; empty = every worktree
-	Fetch     bool   // run `git fetch --prune origin` first
-	Forge     bool   // enable the `gh pr view` pr-closed check
+	Container string      // scan only this container path; empty = every registered container
+	Worktree  string      // scan only the worktree matching this path or name; empty = every worktree
+	Fetch     bool        // run `git fetch --prune origin` first
+	Forge     bool        // enable the `gh pr view` pr-closed check
+	Progress  func(Event) // optional progress observer; nil = no observer, zero overhead
+}
+
+// Event reports Scan's progress to an optional observer (e.g. the CLI's
+// stderr progress line), so a long scan doesn't sit silent until it
+// finishes.
+//
+// Granularity: one "classify" event per worktree, emitted just before that
+// worktree's classification and Claude-data mining begin. The two are
+// folded into a single step here — classification (a handful of git calls)
+// and Claude-data mining (jsonl/task-file reads) interleave inside one loop
+// body with no boundary worth exposing as its own phase. "fetch" fires once
+// per container, immediately before the network call, with Total 0 (there
+// is nothing to count against; only its start is known ahead of time).
+type Event struct {
+	Container string // container path the event is about
+	Phase     string // "fetch" | "classify"
+	Worktree  string // worktree name being classified; "" for "fetch"
+	Index     int    // 1-based position among this container's targeted worktrees; 0 for "fetch"
+	Total     int    // worktrees targeted in this container; 0 for "fetch"
+}
+
+// emit calls progress with ev if progress is non-nil, so call sites never
+// need their own nil check.
+func emit(progress func(Event), ev Event) {
+	if progress != nil {
+		progress(ev)
+	}
 }
 
 // Summary reports what one Scan call did. Its json tags are the CLI's
@@ -77,6 +105,7 @@ func Scan(ctx context.Context, d Deps, o Options) (Summary, error) {
 		sum.Containers++
 
 		if o.Fetch {
+			emit(o.Progress, Event{Container: container, Phase: "fetch"})
 			if err := fetchContainer(ctx, d.Runner, container); err != nil {
 				sum.Warnings = append(sum.Warnings, fmt.Sprintf("fetch %s: %v", container, err))
 			}
@@ -99,7 +128,14 @@ func Scan(ctx context.Context, d Deps, o Options) (Summary, error) {
 			targets = filterWorktrees(allWorktrees, o.Worktree)
 		}
 
-		for _, w := range targets {
+		for i, w := range targets {
+			emit(o.Progress, Event{
+				Container: container,
+				Phase:     "classify",
+				Worktree:  w.Name,
+				Index:     i + 1,
+				Total:     len(targets),
+			})
 			res, err := scanWorktree(ctx, d, container, w, integration, o.Forge, live)
 			if err != nil {
 				return sum, fmt.Errorf("scan: worktree %s: %w", w.Path, err)

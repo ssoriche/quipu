@@ -87,6 +87,8 @@ quipu scan [--fetch] [--forge] [--worktree <w>]
     a failure is a warning, not an error). --forge enables the `gh pr view`
     pr-closed check (one network call per worktree). --worktree scans only
     that worktree instead of every worktree in every registered container.
+    Progress prints to stderr as it goes: in place if stderr is a TTY, one
+    summary line per phase otherwise.
 
 quipu list [--state s] [--container c] [--json]
     Table: NAME STATE DIRTY PURPOSE TASKS LIVE LAST-ACTIVITY, sorted by

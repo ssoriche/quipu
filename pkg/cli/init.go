@@ -49,7 +49,9 @@ func runInit(e env, args []string) int {
 		return errf(e, 2, "%v", err)
 	}
 
-	sum, err := scan.Scan(e.ctx, scan.Deps{DB: db, Runner: e.runner, Home: e.home, Now: e.now}, scan.Options{Container: container})
+	progress, doneProgress := newProgressFunc(e.stderr, isTerminalWriter(e.stderr))
+	sum, err := scan.Scan(e.ctx, scan.Deps{DB: db, Runner: e.runner, Home: e.home, Now: e.now}, scan.Options{Container: container, Progress: progress})
+	doneProgress()
 	if err != nil {
 		return errf(e, 2, "scan: %v", err)
 	}
