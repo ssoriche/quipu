@@ -333,6 +333,18 @@ func EnsureSession(db *DB, sessionID string, worktreeID int64, projectDir string
 	return nil
 }
 
+// TouchSessionActivity updates a session's last_activity to now, without
+// touching any other column. It exists for the Stop hook: Stop fires on
+// every conversational turn, far too often to run a full incremental
+// rescan, but a session's activity clock should still move.
+func TouchSessionActivity(db *DB, sessionID string, now time.Time) error {
+	_, err := db.Exec(`UPDATE sessions SET last_activity=? WHERE session_id=?`, rfc3339(now), sessionID)
+	if err != nil {
+		return fmt.Errorf("store: touch session %s activity: %w", sessionID, err)
+	}
+	return nil
+}
+
 // SessionScan is the full set of facts a jsonl/index scan produces for one
 // session.
 type SessionScan struct {

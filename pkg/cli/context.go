@@ -24,6 +24,7 @@ import (
 // testable without touching the real environment.
 type env struct {
 	ctx       context.Context
+	stdin     io.Reader
 	stdout    io.Writer
 	stderr    io.Writer
 	runner    execx.Runner

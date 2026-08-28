@@ -33,8 +33,8 @@ var commands = []string{
 }
 
 // registry maps each implemented subcommand to its handler. Commands not
-// yet implemented (ui, hook, hooks, claudemd — later chunks) still appear
-// in the usage listing above but have no registry entry.
+// yet implemented (ui, hooks, claudemd — later chunks) still appear in the
+// usage listing above but have no registry entry.
 var registry = map[string]func(env, []string) int{
 	"init":    runInit,
 	"scan":    runScanCmd,
@@ -46,6 +46,7 @@ var registry = map[string]func(env, []string) int{
 	"purpose": runPurpose,
 	"forget":  runForget,
 	"restart": runRestart,
+	"hook":    runHook,
 }
 
 // Run dispatches args[0] as a subcommand and returns the process exit code
@@ -68,6 +69,7 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 
 	e := env{
 		ctx:       ctx,
+		stdin:     os.Stdin,
 		stdout:    stdout,
 		stderr:    stderr,
 		runner:    execx.OSRunner{},
