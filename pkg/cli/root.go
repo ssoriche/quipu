@@ -33,20 +33,22 @@ var commands = []string{
 }
 
 // registry maps each implemented subcommand to its handler. Commands not
-// yet implemented (ui, hooks, claudemd — later chunks) still appear in the
-// usage listing above but have no registry entry.
+// yet implemented (ui — chunk 7) still appear in the usage listing above
+// but have no registry entry.
 var registry = map[string]func(env, []string) int{
-	"init":    runInit,
-	"scan":    runScanCmd,
-	"list":    runList,
-	"show":    runShow,
-	"task":    runTask,
-	"note":    runNote,
-	"done":    runDoneCmd,
-	"purpose": runPurpose,
-	"forget":  runForget,
-	"restart": runRestart,
-	"hook":    runHook,
+	"init":     runInit,
+	"scan":     runScanCmd,
+	"list":     runList,
+	"show":     runShow,
+	"task":     runTask,
+	"note":     runNote,
+	"done":     runDoneCmd,
+	"purpose":  runPurpose,
+	"forget":   runForget,
+	"restart":  runRestart,
+	"hook":     runHook,
+	"hooks":    runHooks,
+	"claudemd": runClaudeMD,
 }
 
 // Run dispatches args[0] as a subcommand and returns the process exit code
