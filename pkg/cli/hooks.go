@@ -85,6 +85,8 @@ func runHooksInstall(e env, args []string) int {
 	}
 	if wrote {
 		fmt.Fprintf(e.stdout, "installed quipu hooks into %s\n", settingsPath)
+	} else {
+		fmt.Fprintf(e.stdout, "quipu hooks already installed in %s, nothing to do\n", settingsPath)
 	}
 	return 0
 }

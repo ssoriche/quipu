@@ -128,8 +128,12 @@ func TestRunHooksInstallIsIdempotent(t *testing.T) {
 	if _, _, code := runCLI(t, "hooks", "install"); code != 0 {
 		t.Fatalf("hooks install #1: exit %d", code)
 	}
-	if _, _, code := runCLI(t, "hooks", "install"); code != 0 {
+	stdout, _, code := runCLI(t, "hooks", "install")
+	if code != 0 {
 		t.Fatalf("hooks install #2: exit %d", code)
+	}
+	if !strings.Contains(stdout, "already installed") {
+		t.Fatalf("second install should confirm the no-op, got: %q", stdout)
 	}
 
 	data, err := os.ReadFile(filepath.Join(home, ".claude", "settings.json"))
