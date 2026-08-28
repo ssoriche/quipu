@@ -99,7 +99,11 @@ func Classify(ctx context.Context, r execx.Runner, w WorktreeInfo, integration s
 
 	// pr-closed: the branch's forge PR is merged or closed. Opt-in (forge)
 	// because it is a network call per worktree; any gh failure falls
-	// through to the remaining checks.
+	// through to the remaining checks. The fish source's `command -q gh`
+	// and github.com-remote-URL guards are intentionally dropped here: a
+	// missing gh binary or a non-GitHub remote simply makes the `gh pr
+	// view` call fail, which falls through the same way — same end state,
+	// one fewer special case.
 	if state == "" && forge && branch != "" {
 		if prState, err := r.RunDir(ctx, w.Path, "gh", "pr", "view", branch, "--json", "state", "--jq", ".state"); err == nil {
 			switch strings.TrimSpace(string(prState)) {

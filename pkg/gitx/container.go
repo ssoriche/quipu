@@ -94,12 +94,12 @@ func ListWorktrees(ctx context.Context, r execx.Runner, container string) ([]Wor
 		byPath[path] = WorktreeInfo{Name: entry.Name(), Path: path}
 	}
 
-	out2 := make([]WorktreeInfo, 0, len(byPath))
+	worktrees := make([]WorktreeInfo, 0, len(byPath))
 	for _, wt := range byPath {
-		out2 = append(out2, wt)
+		worktrees = append(worktrees, wt)
 	}
-	sort.Slice(out2, func(i, j int) bool { return out2[i].Name < out2[j].Name })
-	return out2, nil
+	sort.Slice(worktrees, func(i, j int) bool { return worktrees[i].Name < worktrees[j].Name })
+	return worktrees, nil
 }
 
 // splitPorcelainBlocks splits `git worktree list --porcelain` output into
