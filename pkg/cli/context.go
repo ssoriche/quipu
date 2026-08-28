@@ -126,27 +126,20 @@ func openDB(e env, override string) (*store.DB, error) {
 }
 
 // resolveWorktree implements the CLI's worktree-argument resolution rule:
-// an explicit name/path is looked up across every registered container;
-// otherwise quipu walks up from cwd to find the containing worktree of a
+// an explicit name is looked up across every registered container, and an
+// explicit path (anything containing a path separator, or absolute — a
+// worktree name itself never contains "/" per the vocabulary rule) is
+// looked up by the worktrees.path column directly. This is what lets hooks
+// invoke `quipu scan --worktree <path>` (as the design spec's discovery
+// pipeline documents) alongside interactive use of bare names. Absent
+// either, quipu walks up from cwd to find the containing worktree of a
 // registered container.
 func resolveWorktree(db *store.DB, e env, explicit string) (store.Worktree, error) {
 	if explicit != "" {
-		matches, err := store.FindWorktreesByName(db, explicit)
-		if err != nil {
-			return store.Worktree{}, err
+		if looksLikePath(explicit) {
+			return resolveWorktreeByPath(db, explicit)
 		}
-		switch len(matches) {
-		case 0:
-			return store.Worktree{}, fmt.Errorf("no worktree named %q", explicit)
-		case 1:
-			return matches[0], nil
-		default:
-			paths := make([]string, len(matches))
-			for i, m := range matches {
-				paths[i] = m.Path
-			}
-			return store.Worktree{}, fmt.Errorf("worktree name %q is ambiguous, matches: %s", explicit, strings.Join(paths, ", "))
-		}
+		return resolveWorktreeByName(db, explicit)
 	}
 
 	container, err := gitx.FindContainer(e.cwd)
@@ -164,6 +157,57 @@ func resolveWorktree(db *store.DB, e env, explicit string) (store.Worktree, erro
 		return store.Worktree{}, err
 	}
 	return store.GetWorktreeByContainerAndName(db, container, name)
+}
+
+// looksLikePath reports whether explicit should be treated as a worktree
+// path rather than a bare name: it contains a path separator, or is
+// absolute. Worktree names never contain "/" per the vocabulary rule, so
+// this is unambiguous.
+func looksLikePath(explicit string) bool {
+	return filepath.IsAbs(explicit) || strings.ContainsRune(explicit, filepath.Separator)
+}
+
+// resolveWorktreeByName looks up an explicit bare worktree name across
+// every registered container, erroring if it matches none or more than one.
+func resolveWorktreeByName(db *store.DB, name string) (store.Worktree, error) {
+	matches, err := store.FindWorktreesByName(db, name)
+	if err != nil {
+		return store.Worktree{}, err
+	}
+	switch len(matches) {
+	case 0:
+		return store.Worktree{}, fmt.Errorf("no worktree named %q", name)
+	case 1:
+		return matches[0], nil
+	default:
+		paths := make([]string, len(matches))
+		for i, m := range matches {
+			paths[i] = m.Path
+		}
+		return store.Worktree{}, fmt.Errorf("worktree name %q is ambiguous, matches: %s", name, strings.Join(paths, ", "))
+	}
+}
+
+// resolveWorktreeByPath looks up an explicit worktree path by the
+// worktrees.path column: it resolves explicit to an absolute, symlink-free
+// form first (tolerating a symlink-resolution failure — e.g. the path
+// doesn't exist — by falling back to the cleaned absolute path) since that
+// is the form gitx.ListWorktrees reports and store.UpsertWorktree persists.
+func resolveWorktreeByPath(db *store.DB, explicit string) (store.Worktree, error) {
+	abs, err := filepath.Abs(explicit)
+	if err != nil {
+		return store.Worktree{}, fmt.Errorf("resolve %s: %w", explicit, err)
+	}
+	path := abs
+	if resolved, err := filepath.EvalSymlinks(abs); err == nil {
+		path = resolved
+	}
+
+	w, err := store.GetWorktreeByPath(db, path)
+	if err != nil {
+		return store.Worktree{}, fmt.Errorf("no worktree at path %q", explicit)
+	}
+	return w, nil
 }
 
 // worktreeNameFromCWD returns the name of the worktree cwd is inside,

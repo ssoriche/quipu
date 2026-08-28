@@ -548,6 +548,27 @@ func TestGetWorktreeByContainerAndNameExported(t *testing.T) {
 	}
 }
 
+func TestGetWorktreeByPath(t *testing.T) {
+	db := openTestDB(t)
+	now := time.Date(2026, 8, 27, 12, 0, 0, 0, time.UTC)
+	mustRegisterContainer(t, db, "/c", "c", now)
+	if _, err := UpsertWorktree(db, WorktreeFacts{ContainerPath: "/c", Name: "feature", Path: "/c/feature", State: "active"}, now); err != nil {
+		t.Fatalf("UpsertWorktree: %v", err)
+	}
+
+	got, err := GetWorktreeByPath(db, "/c/feature")
+	if err != nil {
+		t.Fatalf("GetWorktreeByPath: %v", err)
+	}
+	if got.Name != "feature" {
+		t.Fatalf("Name = %q, want feature", got.Name)
+	}
+
+	if _, err := GetWorktreeByPath(db, "/c/nope"); err == nil {
+		t.Fatalf("expected error for unknown path")
+	}
+}
+
 func TestFindWorktreesByName(t *testing.T) {
 	db := openTestDB(t)
 	now := time.Date(2026, 8, 27, 12, 0, 0, 0, time.UTC)

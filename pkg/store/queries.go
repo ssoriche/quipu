@@ -266,6 +266,14 @@ func GetWorktreeByContainerAndName(db *DB, containerPath, name string) (Worktree
 	return getWorktreeByContainerAndName(db, containerPath, name)
 }
 
+// GetWorktreeByPath looks up a worktree by its path column. Callers resolve
+// symlinks/relative components before calling this: the path column holds
+// exactly what gitx reported at scan time (fully resolved, per
+// gitx.ListWorktrees), so lookups must match that form.
+func GetWorktreeByPath(db *DB, path string) (Worktree, error) {
+	return scanWorktreeRow(db.QueryRow(worktreeSelect+" WHERE path=?", path))
+}
+
 // FindWorktreesByName returns every worktree row (across all registered
 // containers) whose name matches. Callers decide how to handle zero or
 // multiple (ambiguous) matches.

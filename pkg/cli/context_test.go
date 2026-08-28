@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -122,6 +123,86 @@ func TestResolveWorktreeExplicitNameNotFound(t *testing.T) {
 	e := env{}
 	if _, err := resolveWorktree(db, e, "nonexistent"); err == nil {
 		t.Fatalf("expected error for unknown worktree name")
+	}
+}
+
+// TestResolveWorktreeExplicitPath covers the spec's "explicit name/path"
+// resolution rule: an explicit argument containing a path separator (or
+// absolute) is looked up by the worktrees.path column, not treated as a
+// bare name. This is what makes `quipu scan --worktree <path>` (as hooks
+// invoke it) and `show`/`forget`/`-w <path>` work.
+func TestResolveWorktreeExplicitPath(t *testing.T) {
+	db := openContextTestDB(t)
+	now := time.Date(2026, 8, 27, 12, 0, 0, 0, time.UTC)
+	container := t.TempDir()
+	worktreePath := filepath.Join(container, "feature")
+	if err := store.RegisterContainer(db, container, "c", now); err != nil {
+		t.Fatalf("RegisterContainer: %v", err)
+	}
+	if _, err := store.UpsertWorktree(db, store.WorktreeFacts{ContainerPath: container, Name: "feature", Path: worktreePath, State: "active"}, now); err != nil {
+		t.Fatalf("UpsertWorktree: %v", err)
+	}
+
+	e := env{}
+	w, err := resolveWorktree(db, e, worktreePath)
+	if err != nil {
+		t.Fatalf("resolveWorktree(path): %v", err)
+	}
+	if w.Name != "feature" {
+		t.Fatalf("Name = %q, want feature", w.Name)
+	}
+}
+
+// TestResolveWorktreeExplicitPathViaSymlink covers resolving a path given
+// through a symlinked prefix: the stored worktrees.path column always holds
+// the fully-resolved form gitx reports, so an unresolved explicit argument
+// must still find it.
+func TestResolveWorktreeExplicitPathViaSymlink(t *testing.T) {
+	db := openContextTestDB(t)
+	now := time.Date(2026, 8, 27, 12, 0, 0, 0, time.UTC)
+
+	real, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatalf("EvalSymlinks: %v", err)
+	}
+	container := filepath.Join(real, "container")
+	if err := os.Mkdir(container, 0o755); err != nil {
+		t.Fatalf("mkdir container: %v", err)
+	}
+	// Registered rows always hold the fully-resolved (symlink-free) form,
+	// matching what gitx.ListWorktrees itself reports (see gittest.go).
+	worktreePath := filepath.Join(container, "feature")
+	if err := os.Mkdir(worktreePath, 0o755); err != nil {
+		t.Fatalf("mkdir worktree: %v", err)
+	}
+
+	symlinkDir := filepath.Join(t.TempDir(), "via-symlink")
+	if err := os.Symlink(container, symlinkDir); err != nil {
+		t.Skipf("symlink not supported in this environment: %v", err)
+	}
+
+	if err := store.RegisterContainer(db, container, "c", now); err != nil {
+		t.Fatalf("RegisterContainer: %v", err)
+	}
+	if _, err := store.UpsertWorktree(db, store.WorktreeFacts{ContainerPath: container, Name: "feature", Path: worktreePath, State: "active"}, now); err != nil {
+		t.Fatalf("UpsertWorktree: %v", err)
+	}
+
+	e := env{}
+	w, err := resolveWorktree(db, e, filepath.Join(symlinkDir, "feature"))
+	if err != nil {
+		t.Fatalf("resolveWorktree(symlinked path): %v", err)
+	}
+	if w.Name != "feature" {
+		t.Fatalf("Name = %q, want feature", w.Name)
+	}
+}
+
+func TestResolveWorktreeExplicitPathNotFound(t *testing.T) {
+	db := openContextTestDB(t)
+	e := env{}
+	if _, err := resolveWorktree(db, e, filepath.Join(t.TempDir(), "nonexistent")); err == nil {
+		t.Fatalf("expected error for unknown path")
 	}
 }
 
