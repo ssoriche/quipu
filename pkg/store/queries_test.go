@@ -782,3 +782,26 @@ func TestTouchSessionActivity(t *testing.T) {
 		t.Fatalf("unexpected sessions: %+v", sessions)
 	}
 }
+
+func TestTouchWorktreeActivity(t *testing.T) {
+	db := openTestDB(t)
+	now := time.Date(2026, 8, 27, 12, 0, 0, 0, time.UTC)
+	mustRegisterContainer(t, db, "/c", "c", now)
+	w, err := UpsertWorktree(db, WorktreeFacts{ContainerPath: "/c", Name: "feature", Path: "/c/feature", State: "active"}, now)
+	if err != nil {
+		t.Fatalf("UpsertWorktree: %v", err)
+	}
+
+	later := now.Add(2 * time.Hour)
+	if err := TouchWorktreeActivity(db, w.ID, later); err != nil {
+		t.Fatalf("TouchWorktreeActivity: %v", err)
+	}
+
+	got, err := GetWorktreeByID(db, w.ID)
+	if err != nil {
+		t.Fatalf("GetWorktreeByID: %v", err)
+	}
+	if got.LastActivity == nil || *got.LastActivity != rfc3339(later) {
+		t.Fatalf("LastActivity = %v, want %s", got.LastActivity, rfc3339(later))
+	}
+}

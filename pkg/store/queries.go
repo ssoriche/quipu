@@ -345,6 +345,17 @@ func TouchSessionActivity(db *DB, sessionID string, now time.Time) error {
 	return nil
 }
 
+// TouchWorktreeActivity updates a worktree's last_activity to now, without
+// touching any other scan-derived fact. Used by the git post-commit hook,
+// which records activity immediately rather than waiting for the next scan.
+func TouchWorktreeActivity(db *DB, worktreeID int64, now time.Time) error {
+	_, err := db.Exec(`UPDATE worktrees SET last_activity=? WHERE id=?`, rfc3339(now), worktreeID)
+	if err != nil {
+		return fmt.Errorf("store: touch worktree %d activity: %w", worktreeID, err)
+	}
+	return nil
+}
+
 // SessionScan is the full set of facts a jsonl/index scan produces for one
 // session.
 type SessionScan struct {

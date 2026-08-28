@@ -53,14 +53,19 @@ func runHooksPrint(e env, args []string) int {
 	return 0
 }
 
-// runHooksInstall implements `quipu hooks install [--dry-run]` (the --git
-// path, `quipu hooks install --git [container]`, is added to this command
+// runHooksInstall implements `quipu hooks install [--dry-run]` and, when
+// --git is given, `quipu hooks install --git [container]` (runHooksInstallGit,
 // in githook.go).
 func runHooksInstall(e env, args []string) int {
 	fs, _, _ := newFlagSet("hooks install")
 	dryRun := fs.Bool("dry-run", false, "print the result instead of writing it")
+	gitFlag := fs.Bool("git", false, "install the opt-in git hooks (post-checkout/post-commit) into a container's .bare/hooks instead of ~/.claude/settings.json")
 	if err := parseArgs(fs, args); err != nil {
 		return errf(e, 1, "%v", err)
+	}
+
+	if *gitFlag {
+		return runHooksInstallGit(e, fs.Args(), *dryRun)
 	}
 
 	settingsPath := filepath.Join(e.home, ".claude", "settings.json")

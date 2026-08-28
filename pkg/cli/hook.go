@@ -13,14 +13,14 @@ import (
 )
 
 // runHook implements `quipu hook <event>`: it dispatches to one of the
-// Claude Code session hooks (session-start, session-end, stop). The opt-in
-// git hooks (git-post-checkout, git-post-commit) are added to this switch
-// in githook.go, each reading whatever it needs from e.stdin/e.cwd rather
-// than command-line args (the hooks that install these commands pass none
-// beyond the event name).
+// Claude Code session hooks (session-start, session-end, stop; the opt-in
+// git hooks, git-post-checkout and git-post-commit, are added to this
+// switch in githook.go), each reading whatever it needs from e.stdin/e.cwd
+// rather than command-line args (the hooks that install these commands pass
+// none beyond the event name).
 func runHook(e env, args []string) int {
 	if len(args) == 0 {
-		return errf(e, 1, "hook requires an event (session-start|session-end|stop)")
+		return errf(e, 1, "hook requires an event (session-start|session-end|stop|git-post-checkout|git-post-commit)")
 	}
 	switch args[0] {
 	case "session-start":
@@ -29,6 +29,10 @@ func runHook(e env, args []string) int {
 		return runHookSessionEnd(e, args[1:])
 	case "stop":
 		return runHookStop(e, args[1:])
+	case "git-post-checkout":
+		return runHookGitPostCheckout(e, args[1:])
+	case "git-post-commit":
+		return runHookGitPostCommit(e, args[1:])
 	default:
 		return errf(e, 1, "unknown hook event %q", args[0])
 	}
