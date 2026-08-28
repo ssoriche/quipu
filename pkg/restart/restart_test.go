@@ -61,6 +61,18 @@ func alwaysExists(string) error { return nil }
 
 func alwaysMissing(string) error { return errors.New("stat: no such file") }
 
+// statMissingOnlyFor returns a Deps.Stat that fails for exactly missingPath
+// and succeeds for every other path — for testing the fallback from a
+// pruned "best" candidate to an older, still-present one.
+func statMissingOnlyFor(missingPath string) func(string) error {
+	return func(path string) error {
+		if path == missingPath {
+			return errors.New("stat: no such file")
+		}
+		return nil
+	}
+}
+
 func TestRestartResumesLatestSession(t *testing.T) {
 	db := openRestartTestDB(t)
 	now := time.Date(2026, 8, 27, 12, 0, 0, 0, time.UTC)
@@ -157,6 +169,50 @@ func TestRestartFreshFallbackMissingJSONLAtRestartTime(t *testing.T) {
 	}
 	if action.Resumed || action.SessionID != "" {
 		t.Fatalf("action = %+v, want fresh fallback (jsonl missing at restart time)", action)
+	}
+}
+
+// TestRestartFallsBackToOlderResumableSessionWhenNewestIsPruned covers
+// pickResumableSession's multi-candidate fallback: when the most recent
+// jsonl_exists=1 session's transcript has actually been pruned since the
+// last scan (Stat fails now), an older-but-still-present resumable session
+// must be resumed instead of falling all the way through to a fresh
+// session.
+func TestRestartFallsBackToOlderResumableSessionWhenNewestIsPruned(t *testing.T) {
+	db := openRestartTestDB(t)
+	now := time.Date(2026, 8, 27, 12, 0, 0, 0, time.UTC)
+	w := mustWorktree(t, db, "/c", "feature", "/c/feature", "active", now)
+
+	projectDir := "/home/.claude/projects/-c-feature"
+	mustSession(t, db, store.SessionScan{
+		SessionID: "sess-older", WorktreeID: w.ID, ProjectDir: projectDir,
+		JSONLExists: true, LastActivity: strp("2026-08-27T10:00:00Z"),
+	}, now)
+	mustSession(t, db, store.SessionScan{
+		SessionID: "sess-newer-pruned", WorktreeID: w.ID, ProjectDir: projectDir,
+		JSONLExists: true, LastActivity: strp("2026-08-27T11:00:00Z"),
+	}, now)
+
+	r := &execx.FakeRunner{Responses: map[string]execx.FakeResponse{
+		"wezterm cli list --format json":                                             {Stdout: []byte(`[{"pane_id":1,"window_id":100}]`)},
+		"wezterm cli spawn --window-id 100 --cwd /c/feature":                         {Stdout: []byte("55\n")},
+		"wezterm cli set-tab-title --pane-id 55 feature":                             {},
+		"wezterm cli send-text --pane-id 55 --no-paste claude --resume sess-older\n": {},
+	}}
+	prunedPath := filepath.Join(projectDir, "sess-newer-pruned.jsonl")
+	d := Deps{DB: db, Term: wezterm.New(r), Live: noLiveSessions, Stat: statMissingOnlyFor(prunedPath)}
+
+	action, err := Restart(context.Background(), d, w, Options{})
+	if err != nil {
+		t.Fatalf("Restart: %v", err)
+	}
+	if !action.Resumed || action.SessionID != "sess-older" {
+		t.Fatalf("action = %+v, want the older still-present session resumed", action)
+	}
+
+	want := "wezterm cli send-text --pane-id 55 --no-paste claude --resume sess-older\n"
+	if len(r.Calls) == 0 || r.Calls[len(r.Calls)-1] != want {
+		t.Fatalf("Calls = %v, want the last call to be %q", r.Calls, want)
 	}
 }
 
