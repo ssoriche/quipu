@@ -11,6 +11,7 @@ import (
 )
 
 func TestParseTaskIDAcceptsBothForms(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		in   string
 		want int64
@@ -31,18 +32,21 @@ func TestParseTaskIDAcceptsBothForms(t *testing.T) {
 }
 
 func TestParseTaskIDRejectsGarbage(t *testing.T) {
+	t.Parallel()
 	if _, err := parseTaskID("qp-abc"); err == nil {
 		t.Fatalf("expected error for non-numeric id")
 	}
 }
 
 func TestTaskDisplayID(t *testing.T) {
+	t.Parallel()
 	if got := taskDisplayID(7); got != "qp-7" {
 		t.Fatalf("taskDisplayID(7) = %q, want qp-7", got)
 	}
 }
 
 func TestReorderMovesBoolFlagAfterPositional(t *testing.T) {
+	t.Parallel()
 	fs, _, _ := newFlagSet("test")
 	force := fs.Bool("force", false, "")
 	got := reorder(fs, []string{"myworktree", "--force"})
@@ -58,6 +62,7 @@ func TestReorderMovesBoolFlagAfterPositional(t *testing.T) {
 }
 
 func TestReorderMovesValueFlagAndItsArgumentAfterPositional(t *testing.T) {
+	t.Parallel()
 	fs, _, _ := newFlagSet("test")
 	w := fs.String("w", "", "")
 	got := reorder(fs, []string{"do the thing", "-w", "myworktree"})
@@ -73,6 +78,7 @@ func TestReorderMovesValueFlagAndItsArgumentAfterPositional(t *testing.T) {
 }
 
 func TestWorktreeNameFromCWD(t *testing.T) {
+	t.Parallel()
 	name, err := worktreeNameFromCWD("/c", "/c/feature/nested/dir")
 	if err != nil {
 		t.Fatalf("worktreeNameFromCWD: %v", err)
@@ -83,6 +89,7 @@ func TestWorktreeNameFromCWD(t *testing.T) {
 }
 
 func TestWorktreeNameFromCWDOutsideContainer(t *testing.T) {
+	t.Parallel()
 	if _, err := worktreeNameFromCWD("/c", "/other/dir"); err == nil {
 		t.Fatalf("expected error for cwd outside container")
 	}
@@ -99,6 +106,7 @@ func openContextTestDB(t *testing.T) *store.DB {
 }
 
 func TestResolveWorktreeExplicitName(t *testing.T) {
+	t.Parallel()
 	db := openContextTestDB(t)
 	now := time.Date(2026, 8, 27, 12, 0, 0, 0, time.UTC)
 	if err := store.RegisterContainer(db, "/c", "c", now); err != nil {
@@ -119,6 +127,7 @@ func TestResolveWorktreeExplicitName(t *testing.T) {
 }
 
 func TestResolveWorktreeExplicitNameNotFound(t *testing.T) {
+	t.Parallel()
 	db := openContextTestDB(t)
 	e := env{}
 	if _, err := resolveWorktree(db, e, "nonexistent"); err == nil {
@@ -132,6 +141,7 @@ func TestResolveWorktreeExplicitNameNotFound(t *testing.T) {
 // bare name. This is what makes `quipu scan --worktree <path>` (as hooks
 // invoke it) and `show`/`forget`/`-w <path>` work.
 func TestResolveWorktreeExplicitPath(t *testing.T) {
+	t.Parallel()
 	db := openContextTestDB(t)
 	now := time.Date(2026, 8, 27, 12, 0, 0, 0, time.UTC)
 	container := t.TempDir()
@@ -158,6 +168,7 @@ func TestResolveWorktreeExplicitPath(t *testing.T) {
 // the fully-resolved form gitx reports, so an unresolved explicit argument
 // must still find it.
 func TestResolveWorktreeExplicitPathViaSymlink(t *testing.T) {
+	t.Parallel()
 	db := openContextTestDB(t)
 	now := time.Date(2026, 8, 27, 12, 0, 0, 0, time.UTC)
 
@@ -199,6 +210,7 @@ func TestResolveWorktreeExplicitPathViaSymlink(t *testing.T) {
 }
 
 func TestResolveWorktreeExplicitPathNotFound(t *testing.T) {
+	t.Parallel()
 	db := openContextTestDB(t)
 	e := env{}
 	if _, err := resolveWorktree(db, e, filepath.Join(t.TempDir(), "nonexistent")); err == nil {
@@ -207,6 +219,7 @@ func TestResolveWorktreeExplicitPathNotFound(t *testing.T) {
 }
 
 func TestResolveWorktreeAmbiguous(t *testing.T) {
+	t.Parallel()
 	db := openContextTestDB(t)
 	now := time.Date(2026, 8, 27, 12, 0, 0, 0, time.UTC)
 	if err := store.RegisterContainer(db, "/c1", "c1", now); err != nil {
@@ -229,6 +242,7 @@ func TestResolveWorktreeAmbiguous(t *testing.T) {
 }
 
 func TestResolveWorktreeCWDWalkUp(t *testing.T) {
+	t.Parallel()
 	container := gittest.MakeBareLayout(t)
 	db := openContextTestDB(t)
 	now := time.Date(2026, 8, 27, 12, 0, 0, 0, time.UTC)
@@ -250,6 +264,7 @@ func TestResolveWorktreeCWDWalkUp(t *testing.T) {
 }
 
 func TestAttributeFromEnvSessionID(t *testing.T) {
+	t.Parallel()
 	db := openContextTestDB(t)
 	now := time.Date(2026, 8, 27, 12, 0, 0, 0, time.UTC)
 	if err := store.RegisterContainer(db, "/c", "c", now); err != nil {
@@ -283,6 +298,7 @@ func TestAttributeFromEnvSessionID(t *testing.T) {
 }
 
 func TestAttributeFallsBackToManualWhenNoSessionID(t *testing.T) {
+	t.Parallel()
 	db := openContextTestDB(t)
 	now := time.Date(2026, 8, 27, 12, 0, 0, 0, time.UTC)
 	if err := store.RegisterContainer(db, "/c", "c", now); err != nil {

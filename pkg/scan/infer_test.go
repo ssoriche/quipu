@@ -17,6 +17,7 @@ func mustTime(t *testing.T, s string) time.Time {
 }
 
 func TestInferPurposePrefersAITitleOfLatestSession(t *testing.T) {
+	t.Parallel()
 	candidates := []sessionCandidate{
 		{sessionID: "old", lastActivity: mustTime(t, "2026-01-01T00:00:00Z"), aiTitle: "old title", firstPrompt: "old prompt"},
 		{sessionID: "new", lastActivity: mustTime(t, "2026-01-02T00:00:00Z"), aiTitle: "new title", firstPrompt: "new prompt"},
@@ -28,6 +29,7 @@ func TestInferPurposePrefersAITitleOfLatestSession(t *testing.T) {
 }
 
 func TestInferPurposeFallsBackToIndexSummary(t *testing.T) {
+	t.Parallel()
 	candidates := []sessionCandidate{
 		{sessionID: "s", lastActivity: mustTime(t, "2026-01-02T00:00:00Z"), indexSummary: "a summary", firstPrompt: "a prompt"},
 	}
@@ -38,6 +40,7 @@ func TestInferPurposeFallsBackToIndexSummary(t *testing.T) {
 }
 
 func TestInferPurposeFallsBackToFirstPromptFirstLine(t *testing.T) {
+	t.Parallel()
 	candidates := []sessionCandidate{
 		{sessionID: "s", lastActivity: mustTime(t, "2026-01-02T00:00:00Z"), firstPrompt: "first line\nsecond line"},
 	}
@@ -48,6 +51,7 @@ func TestInferPurposeFallsBackToFirstPromptFirstLine(t *testing.T) {
 }
 
 func TestInferPurposeNoCandidatesReturnsEmpty(t *testing.T) {
+	t.Parallel()
 	purpose, source := inferPurpose(nil)
 	if purpose != "" || source != "" {
 		t.Fatalf("inferPurpose(nil) = (%q, %q), want empty", purpose, source)
@@ -55,6 +59,7 @@ func TestInferPurposeNoCandidatesReturnsEmpty(t *testing.T) {
 }
 
 func TestInferPurposeLatestWithNoFieldsFallsThroughToEmpty(t *testing.T) {
+	t.Parallel()
 	// The latest session has no usable fields at all; an older session having
 	// an ai_title must not "leak through" — purpose inference is per the
 	// single latest session, not a search across all of them.
@@ -69,6 +74,7 @@ func TestInferPurposeLatestWithNoFieldsFallsThroughToEmpty(t *testing.T) {
 }
 
 func TestMapTaskStatus(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		claude string
 		want   string
@@ -86,6 +92,7 @@ func TestMapTaskStatus(t *testing.T) {
 }
 
 func TestIsGonePRClosedPair(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		old, new string
 		want     bool
@@ -104,6 +111,7 @@ func TestIsGonePRClosedPair(t *testing.T) {
 }
 
 func TestLatestOfPicksMaxAcrossCandidatesAndCommitTime(t *testing.T) {
+	t.Parallel()
 	candidates := []sessionCandidate{
 		{sessionID: "a", lastActivity: mustTime(t, "2026-01-01T00:00:00Z")},
 		{sessionID: "b", lastActivity: mustTime(t, "2026-01-03T00:00:00Z")},
@@ -125,6 +133,7 @@ func TestLatestOfPicksMaxAcrossCandidatesAndCommitTime(t *testing.T) {
 }
 
 func TestLatestOfAllZeroReturnsZero(t *testing.T) {
+	t.Parallel()
 	got := latestOf(nil, time.Time{})
 	if !got.IsZero() {
 		t.Fatalf("latestOf(nil, zero) = %v, want zero", got)
@@ -132,12 +141,14 @@ func TestLatestOfAllZeroReturnsZero(t *testing.T) {
 }
 
 func TestAgeDaysPtrNilOnError(t *testing.T) {
+	t.Parallel()
 	if p := ageDaysPtr(gitx.Status{State: "error"}); p != nil {
 		t.Fatalf("ageDaysPtr(error) = %v, want nil", *p)
 	}
 }
 
 func TestAgeDaysPtrSetOtherwise(t *testing.T) {
+	t.Parallel()
 	p := ageDaysPtr(gitx.Status{State: "active", AgeDays: 3})
 	if p == nil || *p != 3 {
 		t.Fatalf("ageDaysPtr(active,3) = %v, want pointer to 3", p)
@@ -145,6 +156,7 @@ func TestAgeDaysPtrSetOtherwise(t *testing.T) {
 }
 
 func TestFilterWorktreesMatchesPathOrName(t *testing.T) {
+	t.Parallel()
 	all := []gitx.WorktreeInfo{
 		{Name: "main", Path: "/c/main"},
 		{Name: "feature", Path: "/c/feature"},

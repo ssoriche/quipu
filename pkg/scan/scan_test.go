@@ -77,6 +77,7 @@ func writeClaudeSessionFixture(t *testing.T, home, worktreePath, sessionID strin
 // lifecycle transition (never duplicated on an unchanged rescan), and
 // missing-worktree detection after its directory disappears.
 func TestScanIntegration(t *testing.T) {
+	t.Parallel()
 	container := gittest.MakeBareLayout(t)
 	home := t.TempDir()
 	db := openScanTestDB(t)
@@ -249,6 +250,7 @@ func TestScanIntegration(t *testing.T) {
 // must land as state="error" while the healthy one still gets a proper
 // classification, and Scan itself must not fail.
 func TestScanCorruptWorktreeBecomesErrorButOthersStillScan(t *testing.T) {
+	t.Parallel()
 	container := gittest.MakeBareLayout(t)
 	home := t.TempDir()
 	db := openScanTestDB(t)
@@ -307,6 +309,7 @@ func TestScanCorruptWorktreeBecomesErrorButOthersStillScan(t *testing.T) {
 // still has an index entry is imported with jsonl_exists=0, and its index
 // summary drives purpose inference.
 func TestScanIndexFallbackForPrunedSession(t *testing.T) {
+	t.Parallel()
 	container := gittest.MakeBareLayout(t)
 	home := t.TempDir()
 	db := openScanTestDB(t)
@@ -359,6 +362,7 @@ func TestScanIndexFallbackForPrunedSession(t *testing.T) {
 // warning, never an error, and it must not stop the rest of the scan (the
 // container's worktrees are still classified and upserted).
 func TestScanFetchWarningOnFailure(t *testing.T) {
+	t.Parallel()
 	container := gittest.MakeBareLayout(t)
 	home := t.TempDir()
 	db := openScanTestDB(t)
@@ -405,6 +409,7 @@ func TestScanFetchWarningOnFailure(t *testing.T) {
 // TestScanFetchHappyPath covers the successful --fetch case: no warning is
 // recorded, and worktrees are scanned normally.
 func TestScanFetchHappyPath(t *testing.T) {
+	t.Parallel()
 	container := gittest.MakeBareLayout(t)
 	home := t.TempDir()
 	db := openScanTestDB(t)

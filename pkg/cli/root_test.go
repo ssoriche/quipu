@@ -8,6 +8,7 @@ import (
 )
 
 func TestRunUnknownCommand(t *testing.T) {
+	t.Parallel()
 	var stdout, stderr bytes.Buffer
 	code := Run(context.Background(), []string{"bogus"}, &stdout, &stderr)
 	if code != 1 {
