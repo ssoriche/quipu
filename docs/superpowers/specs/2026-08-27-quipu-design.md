@@ -129,8 +129,11 @@ sessions(
   started_at TEXT,
   last_activity TEXT,
   live_pid INTEGER,                 -- from ~/.claude/sessions/<pid>.json, NULL if not running
+  jsonl_size INTEGER,               -- size+mtime at last parse; unchanged pair ⇒
+  jsonl_mtime TEXT,                 -- skip re-parsing (incremental scan)
   last_scanned TEXT NOT NULL
 );
+CREATE INDEX idx_sessions_worktree ON sessions(worktree_id);
 
 tasks(
   id INTEGER PRIMARY KEY,           -- displayed as qp-<id>
@@ -144,19 +147,33 @@ tasks(
   external_key TEXT,                -- e.g. tasks/<sessionId>/<n>.json for import dedupe
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
-  closed_at TEXT,
+  closed_at TEXT,                   -- set when status becomes done OR dropped
   UNIQUE(external_key)
 );
+CREATE INDEX idx_tasks_worktree ON tasks(worktree_id);
 
 events(                             -- append-only progress log ("what has been done")
   id INTEGER PRIMARY KEY,
   worktree_id INTEGER NOT NULL REFERENCES worktrees(id),
-  session_id TEXT,
-  kind TEXT NOT NULL,               -- note|done|decision|session-start|session-end|scan
+  session_id TEXT REFERENCES sessions(session_id),
+  kind TEXT NOT NULL,               -- note|done|session-start|session-end|scan
   body TEXT NOT NULL,
   created_at TEXT NOT NULL
 );
+CREATE INDEX idx_events_worktree ON events(worktree_id);
 ```
+
+Event producers: `quipu note` ⇒ `note`; `quipu done` ⇒ `done`; the
+SessionStart hook ⇒ `session-start`; the SessionEnd/Stop hooks ⇒
+`session-end`; `quipu scan` ⇒ one `scan` event per worktree whose `state`
+changed (body = `old → new`). The `gone ↔ pr-closed` transition pair is not
+logged: it flaps with `--forge` presence (pr-closed is only detectable when
+`--forge` is passed), so logging it would be noise, not signal. Every writer opens the DB with WAL and
+`busy_timeout=5000ms` so bursts of concurrent hook invocations (e.g. many
+sessions restarting after a crash) retry instead of failing.
+
+Containers are only ever added (`quipu init`); unregistering is intentionally
+out of scope for v1 (delete the row manually if ever needed).
 
 Task dependencies are deliberately omitted (YAGNI): per-worktree task lists
 are small; beads-style dependency graphs are out of scope.
@@ -170,7 +187,9 @@ Per registered container:
    (always `test -e`, never `-d`). Union of both, keyed by path.
 2. **Classification** (port of `_git_worktree_status`, same precedence):
    protected → detached → merged (`git rev-list HEAD --not <integration>`
-   empty) → gone (`upstream:track == [gone]`) → stale (age > 30d) → active.
+   empty) → pr-closed (only with `--forge`: `gh pr view <branch> --json
+   state` in the worktree, state MERGED/CLOSED) → gone (`upstream:track ==
+   [gone]`) → stale (age > 30d) → active.
    Dirty = `git status --porcelain` non-empty *or the check failed*
    (fail-safe). Integration branch from `origin/HEAD`. `scan` never fetches
    by default (`--fetch` opt-in runs `git fetch --prune origin` first with a
@@ -199,9 +218,8 @@ Per registered container:
 4. **Purpose inference** (only when `purpose_source != 'manual'`):
    latest session's `ai_title` → else index `summary` → else `first_prompt`
    (first line, truncated). Record `purpose_source`.
-5. Incremental: skip re-parsing a jsonl whose (size, mtime) is unchanged
-   since `last_scanned` (stored in a scan cache table or derived — store
-   size+mtime columns on sessions).
+5. Incremental: skip re-parsing a jsonl whose (size, mtime) pair matches the
+   stored `jsonl_size`/`jsonl_mtime` on its `sessions` row.
 
 Scan is idempotent and safe to run repeatedly (hooks run it implicitly for
 the current worktree only: `quipu scan --worktree <path>`).
@@ -224,7 +242,9 @@ quipu task list [--status s] [-w w]
 quipu task start|done|drop <id>
 quipu note <text> [-w w]       append event kind=note
 quipu done <text> [-w w]       append event kind=done (a "what happened" log line)
-quipu restart <w> [--new-window] [--fresh]
+quipu purpose <text> [-w w]    set worktree purpose (purpose_source='manual';
+                               scan never overwrites it)
+quipu restart <w> [--new-window] [--fresh] [--force]
 quipu restart --all [--states active,stale]
 quipu ui                       bubbletea TUI
 quipu hook session-start|session-end|stop   (reads hook JSON on stdin)
@@ -235,6 +255,19 @@ quipu claudemd                              print the CLAUDE.md snippet
 
 Exit codes: 0 success, 1 invalid args, 2 git/exec failure (git.fish
 convention).
+
+**Session attribution for CLI writes** (`task add/start/done/drop`, `note`,
+`done`): commands run from inside a Claude session (its Bash tool) inherit
+`CLAUDE_CODE_SESSION_ID` in the environment (verified locally). When set,
+the write gets `source='claude'` and `session_id=$CLAUDE_CODE_SESSION_ID`.
+Fallback when unset: match the worktree path against the live registry
+`~/.claude/sessions/<pid>.json` cwd entries (unique match only). Otherwise
+`source='manual'`, `session_id` NULL. On either attributed path, any write
+that stores a session id — `tasks` rows and `events` rows alike (both
+reference `sessions(session_id)`) — first upserts a minimal `sessions` row
+if the id is unknown, so the FKs hold (`project_dir` derived from the
+worktree path via the same slug function as discovery; `jsonl_exists=0`
+until a scan confirms otherwise).
 
 ## Restart semantics
 
