@@ -175,6 +175,19 @@ sessions restarting after a crash) retry instead of failing.
 Containers are only ever added (`quipu init`); unregistering is intentionally
 out of scope for v1 (delete the row manually if ever needed).
 
+**Deleted worktrees.** Removing a worktree directory never removes quipu
+data: the next scan marks the row `state='missing'` and all sessions, tasks,
+events, and purpose are kept for forensics. Deletion is detected only at
+scan time (git runs no hooks on `git worktree remove`). A missing worktree
+that still has open tasks is a lost-work signal: `list` and the TUI mark it
+(`!` next to the task count) instead of letting it sink silently. Re-creating
+a worktree with the same name revives its row and history (caveat: an
+unrelated new worktree reusing an old name inherits that history). To
+intentionally discard history: `quipu forget <w>` deletes the worktree row
+and its sessions/tasks/events from the DB only — never touches the
+filesystem or git — and refuses unless the worktree is `missing` (or
+`--force`).
+
 Task dependencies are deliberately omitted (YAGNI): per-worktree task lists
 are small; beads-style dependency graphs are out of scope.
 
@@ -244,6 +257,8 @@ quipu note <text> [-w w]       append event kind=note
 quipu done <text> [-w w]       append event kind=done (a "what happened" log line)
 quipu purpose <text> [-w w]    set worktree purpose (purpose_source='manual';
                                scan never overwrites it)
+quipu forget <w> [--force]     delete a missing worktree's rows from the DB
+                               (DB-only; requires state=missing unless --force)
 quipu restart <w> [--new-window] [--fresh] [--force]
 quipu restart --all [--states active,stale]
 quipu ui                       bubbletea TUI
