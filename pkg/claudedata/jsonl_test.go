@@ -46,6 +46,28 @@ func TestScanSessionFixture(t *testing.T) {
 	}
 }
 
+// TestScanSessionAITitleTakesLastRecordVerbatim covers a case the fixture
+// doesn't: unlike AwaySummary, AITitle has no "if absent, ignore" carve-out
+// in the spec — the LAST ai-title record's field wins even if it is empty,
+// clearing whatever title an earlier record set.
+func TestScanSessionAITitleTakesLastRecordVerbatim(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "clears-title.jsonl")
+	content := `{"type":"ai-title","timestamp":"2026-01-01T00:00:01Z","aiTitle":"An earlier title"}` + "\n" +
+		`{"type":"ai-title","timestamp":"2026-01-01T00:00:02Z","aiTitle":""}` + "\n"
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write fixture: %v", err)
+	}
+
+	facts, err := ScanSession(path)
+	if err != nil {
+		t.Fatalf("ScanSession: %v", err)
+	}
+	if facts.AITitle != "" {
+		t.Fatalf("AITitle = %q, want empty (last record's field wins verbatim)", facts.AITitle)
+	}
+}
+
 func TestScanSessionEmpty(t *testing.T) {
 	facts, err := ScanSession(filepath.Join("testdata", "empty.jsonl"))
 	if err != nil {

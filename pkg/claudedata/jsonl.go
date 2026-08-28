@@ -87,9 +87,11 @@ func ScanSession(path string) (SessionFacts, error) {
 				haveFirstPrompt = true
 			}
 		case rec.Type == "ai-title":
-			if rec.AITitle != "" {
-				facts.AITitle = rec.AITitle
-			}
+			// Unconditional: the spec defines this as the LAST such
+			// record's aiTitle field, verbatim — unlike AwaySummary there
+			// is no "if absent, ignore" carve-out, so a later record with
+			// an empty aiTitle legitimately clears a prior title.
+			facts.AITitle = rec.AITitle
 		case rec.Type == "system" && rec.Subtype == "away_summary":
 			if s, ok := rawString(rec.Content); ok && s != "" {
 				facts.AwaySummary = s
