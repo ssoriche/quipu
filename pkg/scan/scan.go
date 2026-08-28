@@ -43,13 +43,14 @@ type Options struct {
 	Forge     bool   // enable the `gh pr view` pr-closed check
 }
 
-// Summary reports what one Scan call did.
+// Summary reports what one Scan call did. Its json tags are the CLI's
+// `quipu scan --json` output shape.
 type Summary struct {
-	Containers    int
-	Worktrees     int
-	Sessions      int
-	TasksImported int
-	Warnings      []string
+	Containers    int      `json:"containers"`
+	Worktrees     int      `json:"worktrees"`
+	Sessions      int      `json:"sessions"`
+	TasksImported int      `json:"tasksImported"`
+	Warnings      []string `json:"warnings,omitempty"`
 }
 
 // Scan runs the discovery pipeline once: for each targeted container, it
