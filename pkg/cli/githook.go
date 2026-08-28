@@ -56,7 +56,7 @@ func runHookGitPostCheckout(e env, _ []string) int {
 	}
 	defer db.Close()
 
-	cwd := absResolved(e.cwd)
+	cwd := absSymlinkResolved(e.cwd)
 	container, ok, err := hookRegisteredContainer(db, cwd)
 	if err != nil {
 		return errf(e, 2, "%v", err)
@@ -97,7 +97,7 @@ func runHookGitPostCommit(e env, _ []string) int {
 	}
 	defer db.Close()
 
-	cwd := absResolved(e.cwd)
+	cwd := absSymlinkResolved(e.cwd)
 	w, ok, err := hookWorktree(db, cwd)
 	if err != nil {
 		return errf(e, 2, "%v", err)
@@ -130,20 +130,4 @@ func commitSubject(ctx context.Context, r execx.Runner, worktreePath string) (st
 		return "", fmt.Errorf("git log -1 --format=%%s: %w", err)
 	}
 	return strings.TrimSpace(string(out)), nil
-}
-
-// absResolved returns p as an absolute, symlink-free path, tolerating a
-// resolution failure (e.g. p doesn't exist) by falling back to the cleaned
-// absolute form — matching resolveWorktreeByPath's own fallback, since git
-// hooks' cwd should already be the canonical worktree root but a defensive
-// second form costs nothing.
-func absResolved(p string) string {
-	abs, err := filepath.Abs(p)
-	if err != nil {
-		return p
-	}
-	if resolved, err := filepath.EvalSymlinks(abs); err == nil {
-		return resolved
-	}
-	return abs
 }

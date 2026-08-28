@@ -66,11 +66,11 @@ func makeFakeContainer(t *testing.T, worktreeName string) (container, worktreePa
 		t.Fatalf("mkdir worktree: %v", err)
 	}
 
-	// hook.go's absResolved (used for both e.cwd and gitx.FindContainer's
-	// filesystem walk) resolves symlinks; t.TempDir() itself may not be
-	// symlink-free (e.g. macOS's /var -> /private/var), so fixtures must
-	// return the resolved form to match what a hook command actually
-	// stores, exactly like gittest.MakeBareLayout does.
+	// context.go's absSymlinkResolved (used for both e.cwd and
+	// gitx.FindContainer's filesystem walk) resolves symlinks; t.TempDir()
+	// itself may not be symlink-free (e.g. macOS's /var -> /private/var),
+	// so fixtures must return the resolved form to match what a hook
+	// command actually stores, exactly like gittest.MakeBareLayout does.
 	resolvedContainer, err := filepath.EvalSymlinks(container)
 	if err != nil {
 		t.Fatalf("resolve container symlinks: %v", err)

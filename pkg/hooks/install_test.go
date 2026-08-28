@@ -142,6 +142,53 @@ func TestMergeSettingsPreservesUnrelatedKeysAndHooks(t *testing.T) {
 	}
 }
 
+// TestMergeSettingsToleratesMalformedShapes guards against a panic when an
+// existing settings.json has a "hooks" key or per-event value of the wrong
+// JSON shape (a hand-edited or corrupted file, not one quipu itself wrote):
+// MergeSettings must recover by treating the malformed value as absent
+// rather than panicking on a failed type assertion, and still write its
+// managed entries.
+func TestMergeSettingsToleratesMalformedShapes(t *testing.T) {
+	t.Parallel()
+	cases := map[string]string{
+		"hooks is a string, not an object": `{"hooks": "oops"}`,
+		"SessionStart is an object, not an array": `{
+			"hooks": {"SessionStart": {}}
+		}`,
+	}
+
+	for name, existing := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			var merged []byte
+			var changed bool
+			var err error
+			func() {
+				defer func() {
+					if r := recover(); r != nil {
+						t.Fatalf("MergeSettings panicked: %v", r)
+					}
+				}()
+				merged, changed, err = MergeSettings([]byte(existing), "quipu")
+			}()
+			if err != nil {
+				t.Fatalf("MergeSettings: %v", err)
+			}
+			if !changed {
+				t.Fatalf("expected changed=true (managed entries had to be added fresh)")
+			}
+
+			hooksBlock := decodeHooksBlock(t, merged)
+			for _, event := range managedEvents {
+				cmds := matcherCommands(t, hooksBlock, event)
+				if len(cmds) != 1 {
+					t.Fatalf("%s commands = %v, want exactly one managed entry", event, cmds)
+				}
+			}
+		})
+	}
+}
+
 func TestMergeSettingsIdempotent(t *testing.T) {
 	t.Parallel()
 	first, _, err := MergeSettings(nil, "quipu")

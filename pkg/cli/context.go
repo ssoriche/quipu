@@ -191,24 +191,32 @@ func resolveWorktreeByName(db *store.DB, name string) (store.Worktree, error) {
 
 // resolveWorktreeByPath looks up an explicit worktree path by the
 // worktrees.path column: it resolves explicit to an absolute, symlink-free
-// form first (tolerating a symlink-resolution failure — e.g. the path
-// doesn't exist — by falling back to the cleaned absolute path) since that
-// is the form gitx.ListWorktrees reports and store.UpsertWorktree persists.
+// form first (via absSymlinkResolved) since that is the form
+// gitx.ListWorktrees reports and store.UpsertWorktree persists.
 func resolveWorktreeByPath(db *store.DB, explicit string) (store.Worktree, error) {
-	abs, err := filepath.Abs(explicit)
-	if err != nil {
-		return store.Worktree{}, fmt.Errorf("resolve %s: %w", explicit, err)
-	}
-	path := abs
-	if resolved, err := filepath.EvalSymlinks(abs); err == nil {
-		path = resolved
-	}
-
-	w, err := store.GetWorktreeByPath(db, path)
+	w, err := store.GetWorktreeByPath(db, absSymlinkResolved(explicit))
 	if err != nil {
 		return store.Worktree{}, fmt.Errorf("no worktree at path %q", explicit)
 	}
 	return w, nil
+}
+
+// absSymlinkResolved returns p as an absolute, symlink-free path, tolerating
+// a resolution failure (e.g. p doesn't exist, or the underlying
+// filepath.Abs call fails — which in practice only happens if os.Getwd
+// fails) by falling back to the best available form: the absolute path
+// without symlink resolution, or p itself. It is the single implementation
+// shared by every worktree-path lookup that needs the same canonical form
+// gitx.ListWorktrees reports and store.UpsertWorktree persists.
+func absSymlinkResolved(p string) string {
+	abs, err := filepath.Abs(p)
+	if err != nil {
+		abs = p
+	}
+	if resolved, err := filepath.EvalSymlinks(abs); err == nil {
+		return resolved
+	}
+	return abs
 }
 
 // worktreeNameFromCWD returns the name of the worktree cwd is inside,
