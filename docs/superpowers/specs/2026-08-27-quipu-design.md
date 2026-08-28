@@ -300,6 +300,17 @@ registered container — safe globally):
 - `SessionEnd` / `Stop` → records `session-end`/activity event, updates
   `last_activity`, rescans this worktree's claude files (cheap incremental).
 
+**Git hooks (opt-in)** (`quipu hooks install --git [container]`): installs
+`post-checkout` and `post-commit` scripts into `<container>/.bare/hooks/`
+(shared by every worktree in the bare layout). `post-checkout` registers
+newly created worktrees immediately (closing the gap where a `git wadd`-ed
+worktree is invisible until the next scan); `post-commit` updates
+`last_activity` and appends an event. Installed scripts always chain to any
+pre-existing hook of the same name, run quipu in the background so git is
+never slowed, and always exit 0. Never installs `pre-*` hooks. If the hook
+file exists and wasn't written by quipu, or `core.hooksPath` is set,
+installation refuses with guidance instead of overwriting.
+
 **CLAUDE.md snippet** (`quipu claudemd`, to be appended to the container's
 worktree CLAUDE.md or user CLAUDE.md): instructs sessions to run
 `quipu task add/start/done`, `quipu note`, `quipu done` as they plan,
