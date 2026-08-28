@@ -1,0 +1,10 @@
+{"type":"last-prompt"}
+{"type":"user","timestamp":"2026-01-01T00:00:01Z","message":{"role":"user","content":"<command-name>compact</command-name>"}}
+{"type":"user","timestamp":"2026-01-01T00:00:02Z","message":{"role":"user","content":[{"type":"tool_result","content":"ok"}]}}
+{"type":"user","timestamp":"2026-01-01T00:00:03Z","gitBranch":"feature/foo-fix","message":{"role":"user","content":"Please fix the bug in foo.go"}}
+{"type":"assistant","timestamp":"2026-01-01T00:00:04Z","message":{"role":"assistant","content":"Sure, I'll look into it."}}
+{"type":"ai-title","timestamp":"2026-01-01T00:00:05Z","aiTitle":"Fix foo bug"}
+{"type":"ai-title","timestamp":"2026-01-01T00:00:06Z","aiTitle":"Fix foo.go null pointer"}
+{"type":"system","subtype":"away_summary","timestamp":"2026-01-01T00:00:07Z","content":"User stepped away while waiting for tests."}
+{"type":"broken", this is not valid json
+{"type":"last-prompt","timestamp":null}
