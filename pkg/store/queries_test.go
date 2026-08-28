@@ -233,6 +233,217 @@ func TestClosedAtSetOnDoneAndDropped(t *testing.T) {
 	}
 }
 
+func TestMarkWorktreesMissing(t *testing.T) {
+	db := openTestDB(t)
+	now := time.Date(2026, 8, 27, 12, 0, 0, 0, time.UTC)
+	mustRegisterContainer(t, db, "/c", "c", now)
+
+	kept, err := UpsertWorktree(db, WorktreeFacts{ContainerPath: "/c", Name: "kept", Path: "/c/kept", State: "active"}, now)
+	if err != nil {
+		t.Fatalf("UpsertWorktree kept: %v", err)
+	}
+	gone, err := UpsertWorktree(db, WorktreeFacts{ContainerPath: "/c", Name: "gone", Path: "/c/gone", State: "active"}, now)
+	if err != nil {
+		t.Fatalf("UpsertWorktree gone: %v", err)
+	}
+
+	later := now.Add(time.Hour)
+	if err := MarkWorktreesMissing(db, "/c", []string{"/c/kept"}, later); err != nil {
+		t.Fatalf("MarkWorktreesMissing: %v", err)
+	}
+
+	gotKept, err := getWorktreeByID(db, kept.ID)
+	if err != nil {
+		t.Fatalf("getWorktreeByID kept: %v", err)
+	}
+	if gotKept.State != "active" {
+		t.Fatalf("seen worktree should be untouched, got state %q", gotKept.State)
+	}
+
+	gotGone, err := getWorktreeByID(db, gone.ID)
+	if err != nil {
+		t.Fatalf("getWorktreeByID gone: %v", err)
+	}
+	if gotGone.State != "missing" {
+		t.Fatalf("unseen worktree should be marked missing, got state %q", gotGone.State)
+	}
+}
+
+func TestMarkWorktreesMissingEmptySeenPathsMarksAll(t *testing.T) {
+	db := openTestDB(t)
+	now := time.Date(2026, 8, 27, 12, 0, 0, 0, time.UTC)
+	mustRegisterContainer(t, db, "/c", "c", now)
+
+	w1, err := UpsertWorktree(db, WorktreeFacts{ContainerPath: "/c", Name: "one", Path: "/c/one", State: "active"}, now)
+	if err != nil {
+		t.Fatalf("UpsertWorktree one: %v", err)
+	}
+	w2, err := UpsertWorktree(db, WorktreeFacts{ContainerPath: "/c", Name: "two", Path: "/c/two", State: "active"}, now)
+	if err != nil {
+		t.Fatalf("UpsertWorktree two: %v", err)
+	}
+
+	later := now.Add(time.Hour)
+	if err := MarkWorktreesMissing(db, "/c", nil, later); err != nil {
+		t.Fatalf("MarkWorktreesMissing: %v", err)
+	}
+
+	for _, id := range []int64{w1.ID, w2.ID} {
+		got, err := getWorktreeByID(db, id)
+		if err != nil {
+			t.Fatalf("getWorktreeByID %d: %v", id, err)
+		}
+		if got.State != "missing" {
+			t.Fatalf("worktree %d should be marked missing, got state %q", id, got.State)
+		}
+	}
+}
+
+func TestUpsertSessionScan(t *testing.T) {
+	db := openTestDB(t)
+	now := time.Date(2026, 8, 27, 12, 0, 0, 0, time.UTC)
+	mustRegisterContainer(t, db, "/c", "c", now)
+	w, err := UpsertWorktree(db, WorktreeFacts{ContainerPath: "/c", Name: "feature", Path: "/c/feature", State: "active"}, now)
+	if err != nil {
+		t.Fatalf("UpsertWorktree: %v", err)
+	}
+
+	firstPrompt := "do the thing"
+	size1 := int64(100)
+	mtime1 := "2026-08-27T12:00:00Z"
+	sid := "sess-1"
+	if err := UpsertSessionScan(db, SessionScan{
+		SessionID:   sid,
+		WorktreeID:  w.ID,
+		ProjectDir:  "/home/.claude/projects/-c-feature",
+		JSONLExists: true,
+		FirstPrompt: &firstPrompt,
+		JSONLSize:   &size1,
+		JSONLMtime:  &mtime1,
+	}, now); err != nil {
+		t.Fatalf("UpsertSessionScan insert: %v", err)
+	}
+
+	detail, err := GetWorktreeDetail(db, w.ID)
+	if err != nil {
+		t.Fatalf("GetWorktreeDetail: %v", err)
+	}
+	if len(detail.Sessions) != 1 {
+		t.Fatalf("expected 1 session, got %d", len(detail.Sessions))
+	}
+	got := detail.Sessions[0]
+	if got.FirstPrompt == nil || *got.FirstPrompt != firstPrompt {
+		t.Fatalf("unexpected first prompt: %+v", got)
+	}
+	if got.JSONLSize == nil || *got.JSONLSize != size1 {
+		t.Fatalf("unexpected jsonl size: %+v", got)
+	}
+	if got.JSONLMtime == nil || *got.JSONLMtime != mtime1 {
+		t.Fatalf("unexpected jsonl mtime: %+v", got)
+	}
+
+	aiTitle := "Fix the widget"
+	size2 := int64(250)
+	mtime2 := "2026-08-27T13:00:00Z"
+	later := now.Add(time.Hour)
+	if err := UpsertSessionScan(db, SessionScan{
+		SessionID:   sid,
+		WorktreeID:  w.ID,
+		ProjectDir:  "/home/.claude/projects/-c-feature",
+		JSONLExists: true,
+		FirstPrompt: &firstPrompt,
+		AITitle:     &aiTitle,
+		JSONLSize:   &size2,
+		JSONLMtime:  &mtime2,
+	}, later); err != nil {
+		t.Fatalf("UpsertSessionScan update: %v", err)
+	}
+
+	detail, err = GetWorktreeDetail(db, w.ID)
+	if err != nil {
+		t.Fatalf("GetWorktreeDetail after update: %v", err)
+	}
+	if len(detail.Sessions) != 1 {
+		t.Fatalf("expected still 1 session after update, got %d", len(detail.Sessions))
+	}
+	got = detail.Sessions[0]
+	if got.AITitle == nil || *got.AITitle != aiTitle {
+		t.Fatalf("unexpected ai title after update: %+v", got)
+	}
+	if got.JSONLSize == nil || *got.JSONLSize != size2 {
+		t.Fatalf("unexpected jsonl size after update: %+v", got)
+	}
+	if got.JSONLMtime == nil || *got.JSONLMtime != mtime2 {
+		t.Fatalf("unexpected jsonl mtime after update: %+v", got)
+	}
+}
+
+func TestSetLivePIDAndClearLivePIDs(t *testing.T) {
+	db := openTestDB(t)
+	now := time.Date(2026, 8, 27, 12, 0, 0, 0, time.UTC)
+	mustRegisterContainer(t, db, "/c", "c", now)
+	w, err := UpsertWorktree(db, WorktreeFacts{ContainerPath: "/c", Name: "feature", Path: "/c/feature", State: "active"}, now)
+	if err != nil {
+		t.Fatalf("UpsertWorktree: %v", err)
+	}
+
+	sid := "sess-live"
+	if err := UpsertSessionScan(db, SessionScan{
+		SessionID:   sid,
+		WorktreeID:  w.ID,
+		ProjectDir:  "/home/.claude/projects/-c-feature",
+		JSONLExists: true,
+	}, now); err != nil {
+		t.Fatalf("UpsertSessionScan: %v", err)
+	}
+
+	if err := SetLivePID(db, sid, 4242); err != nil {
+		t.Fatalf("SetLivePID: %v", err)
+	}
+
+	detail, err := GetWorktreeDetail(db, w.ID)
+	if err != nil {
+		t.Fatalf("GetWorktreeDetail: %v", err)
+	}
+	if len(detail.Sessions) != 1 || detail.Sessions[0].LivePID == nil || *detail.Sessions[0].LivePID != 4242 {
+		t.Fatalf("expected live pid 4242, got %+v", detail.Sessions)
+	}
+
+	if err := ClearLivePIDs(db, w.ID); err != nil {
+		t.Fatalf("ClearLivePIDs: %v", err)
+	}
+
+	detail, err = GetWorktreeDetail(db, w.ID)
+	if err != nil {
+		t.Fatalf("GetWorktreeDetail after clear: %v", err)
+	}
+	if len(detail.Sessions) != 1 || detail.Sessions[0].LivePID != nil {
+		t.Fatalf("expected live pid cleared, got %+v", detail.Sessions)
+	}
+}
+
+func TestListWorktreesFilterContainer(t *testing.T) {
+	db := openTestDB(t)
+	now := time.Date(2026, 8, 27, 12, 0, 0, 0, time.UTC)
+	mustRegisterContainer(t, db, "/c1", "c1", now)
+	mustRegisterContainer(t, db, "/c2", "c2", now)
+
+	if _, err := UpsertWorktree(db, WorktreeFacts{ContainerPath: "/c1", Name: "feature", Path: "/c1/feature", State: "active"}, now); err != nil {
+		t.Fatalf("UpsertWorktree c1: %v", err)
+	}
+	if _, err := UpsertWorktree(db, WorktreeFacts{ContainerPath: "/c2", Name: "other", Path: "/c2/other", State: "active"}, now); err != nil {
+		t.Fatalf("UpsertWorktree c2: %v", err)
+	}
+
+	rows, err := ListWorktrees(db, WorktreeFilter{Container: "/c1"})
+	if err != nil {
+		t.Fatalf("ListWorktrees: %v", err)
+	}
+	if len(rows) != 1 || rows[0].Name != "feature" || rows[0].ContainerPath != "/c1" {
+		t.Fatalf("unexpected rows for container filter: %+v", rows)
+	}
+}
+
 func TestListWorktreesAndOpenTaskCounts(t *testing.T) {
 	db := openTestDB(t)
 	now := time.Date(2026, 8, 27, 12, 0, 0, 0, time.UTC)
