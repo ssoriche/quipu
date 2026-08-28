@@ -17,13 +17,14 @@ type restartActionDTO struct {
 	Resumed   bool   `json:"resumed"`
 	SessionID string `json:"sessionId,omitempty"`
 	Skipped   bool   `json:"skipped"`
+	Failed    bool   `json:"failed,omitempty"`
 	Reason    string `json:"reason,omitempty"`
 }
 
 func newRestartActionDTO(a restart.Action) restartActionDTO {
 	return restartActionDTO{
 		Worktree: a.WorktreeName, PaneID: a.PaneID, Resumed: a.Resumed,
-		SessionID: a.SessionID, Skipped: a.Skipped, Reason: a.Reason,
+		SessionID: a.SessionID, Skipped: a.Skipped, Failed: a.Failed, Reason: a.Reason,
 	}
 }
 
@@ -57,21 +58,22 @@ func runRestart(e env, args []string) int {
 	d := restart.Deps{
 		DB:   db,
 		Term: wezterm.New(e.runner),
-		Home: e.home,
 		Live: func() ([]claudedata.LiveSession, error) { return claudedata.LiveSessions(e.home, claudedata.PIDAlive) },
 		Stat: restart.DefaultStat,
 	}
 
 	if *all {
-		actions, err := restart.RestartAll(e.ctx, d, splitStates(*states))
-		if err != nil {
-			return restartErrorExit(e, err)
+		// RestartAll returns whatever actions it completed *alongside* an
+		// abort error (e.g. wezterm died partway through 10 worktrees): that
+		// partial progress must still be rendered, in whichever output mode
+		// was requested, before the error's exit code is returned — never
+		// silently dropped.
+		actions, restartAllErr := restart.RestartAll(e.ctx, d, splitStates(*states))
+		if code := renderRestartActions(e, actions, *jsonFlag); code != 0 {
+			return code
 		}
-		if *jsonFlag {
-			return writeJSONOut(e, newRestartActionDTOs(actions))
-		}
-		for _, a := range actions {
-			fmt.Fprintln(e.stdout, formatRestartAction(a))
+		if restartAllErr != nil {
+			return restartErrorExit(e, restartAllErr)
 		}
 		return 0
 	}
@@ -123,13 +125,31 @@ func splitStates(s string) []string {
 	return out
 }
 
+// renderRestartActions writes actions to e.stdout in the requested output
+// mode (returning writeJSONOut's exit code, nonzero only on an encode
+// failure). It is the single place both the --all and error-abort paths go
+// through, so partial progress is never rendered inconsistently with a
+// clean run's output.
+func renderRestartActions(e env, actions []restart.Action, asJSON bool) int {
+	if asJSON {
+		return writeJSONOut(e, newRestartActionDTOs(actions))
+	}
+	for _, a := range actions {
+		fmt.Fprintln(e.stdout, formatRestartAction(a))
+	}
+	return 0
+}
+
 // formatRestartAction renders one Action as a single human-readable line.
 func formatRestartAction(a restart.Action) string {
-	if a.Skipped {
+	switch {
+	case a.Failed:
+		return fmt.Sprintf("%s: failed (%s)", a.WorktreeName, a.Reason)
+	case a.Skipped:
 		return fmt.Sprintf("%s: skipped (%s)", a.WorktreeName, a.Reason)
-	}
-	if a.Resumed {
+	case a.Resumed:
 		return fmt.Sprintf("%s: resumed %s in pane %d", a.WorktreeName, a.SessionID, a.PaneID)
+	default:
+		return fmt.Sprintf("%s: started a fresh session in pane %d", a.WorktreeName, a.PaneID)
 	}
-	return fmt.Sprintf("%s: started a fresh session in pane %d", a.WorktreeName, a.PaneID)
 }

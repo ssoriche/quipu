@@ -81,7 +81,7 @@ func TestRestartResumesLatestSession(t *testing.T) {
 		"wezterm cli set-tab-title --pane-id 55 feature":                           {},
 		"wezterm cli send-text --pane-id 55 --no-paste claude --resume sess-new\n": {},
 	}}
-	d := Deps{DB: db, Term: wezterm.New(r), Home: t.TempDir(), Live: noLiveSessions, Stat: alwaysExists}
+	d := Deps{DB: db, Term: wezterm.New(r), Live: noLiveSessions, Stat: alwaysExists}
 
 	action, err := Restart(context.Background(), d, w, Options{})
 	if err != nil {
@@ -121,7 +121,7 @@ func TestRestartFreshFallbackNoResumableSession(t *testing.T) {
 		"wezterm cli set-tab-title --pane-id 55 feature":         {},
 		"wezterm cli send-text --pane-id 55 --no-paste claude\n": {},
 	}}
-	d := Deps{DB: db, Term: wezterm.New(r), Home: t.TempDir(), Live: noLiveSessions, Stat: alwaysExists}
+	d := Deps{DB: db, Term: wezterm.New(r), Live: noLiveSessions, Stat: alwaysExists}
 
 	action, err := Restart(context.Background(), d, w, Options{})
 	if err != nil {
@@ -149,7 +149,7 @@ func TestRestartFreshFallbackMissingJSONLAtRestartTime(t *testing.T) {
 	}}
 	// The session row says jsonl_exists=1, but the file has since been
 	// pruned: Stat fails now, so restart must fall back to a fresh session.
-	d := Deps{DB: db, Term: wezterm.New(r), Home: t.TempDir(), Live: noLiveSessions, Stat: alwaysMissing}
+	d := Deps{DB: db, Term: wezterm.New(r), Live: noLiveSessions, Stat: alwaysMissing}
 
 	action, err := Restart(context.Background(), d, w, Options{})
 	if err != nil {
@@ -175,7 +175,7 @@ func TestRestartFreshOptionOverridesResumableSession(t *testing.T) {
 		"wezterm cli set-tab-title --pane-id 55 feature":         {},
 		"wezterm cli send-text --pane-id 55 --no-paste claude\n": {},
 	}}
-	d := Deps{DB: db, Term: wezterm.New(r), Home: t.TempDir(), Live: noLiveSessions, Stat: alwaysExists}
+	d := Deps{DB: db, Term: wezterm.New(r), Live: noLiveSessions, Stat: alwaysExists}
 
 	action, err := Restart(context.Background(), d, w, Options{Fresh: true})
 	if err != nil {
@@ -197,7 +197,7 @@ func TestRestartLiveGuardSkipsUnlessForce(t *testing.T) {
 	// No FakeRunner responses at all: any wezterm call would error, proving
 	// the guard short-circuits before ever touching wezterm.
 	r := &execx.FakeRunner{Responses: map[string]execx.FakeResponse{}}
-	d := Deps{DB: db, Term: wezterm.New(r), Home: t.TempDir(), Live: live, Stat: alwaysExists}
+	d := Deps{DB: db, Term: wezterm.New(r), Live: live, Stat: alwaysExists}
 
 	action, err := Restart(context.Background(), d, w, Options{})
 	if err != nil {
@@ -228,7 +228,7 @@ func TestRestartForceOverridesLiveGuard(t *testing.T) {
 		"wezterm cli set-tab-title --pane-id 55 feature":         {},
 		"wezterm cli send-text --pane-id 55 --no-paste claude\n": {},
 	}}
-	d := Deps{DB: db, Term: wezterm.New(r), Home: t.TempDir(), Live: live, Stat: alwaysExists}
+	d := Deps{DB: db, Term: wezterm.New(r), Live: live, Stat: alwaysExists}
 
 	action, err := Restart(context.Background(), d, w, Options{Force: true})
 	if err != nil {
@@ -251,7 +251,7 @@ func TestRestartNewWindowFlagUsesSpawnWindow(t *testing.T) {
 		"wezterm cli set-tab-title --pane-id 77 feature":         {},
 		"wezterm cli send-text --pane-id 77 --no-paste claude\n": {},
 	}}
-	d := Deps{DB: db, Term: wezterm.New(r), Home: t.TempDir(), Live: noLiveSessions, Stat: alwaysExists}
+	d := Deps{DB: db, Term: wezterm.New(r), Live: noLiveSessions, Stat: alwaysExists}
 
 	action, err := Restart(context.Background(), d, w, Options{NewWindow: true})
 	if err != nil {
@@ -273,7 +273,7 @@ func TestRestartNoPanesFallsBackToSpawnWindow(t *testing.T) {
 		"wezterm cli set-tab-title --pane-id 88 feature":         {},
 		"wezterm cli send-text --pane-id 88 --no-paste claude\n": {},
 	}}
-	d := Deps{DB: db, Term: wezterm.New(r), Home: t.TempDir(), Live: noLiveSessions, Stat: alwaysExists}
+	d := Deps{DB: db, Term: wezterm.New(r), Live: noLiveSessions, Stat: alwaysExists}
 
 	action, err := Restart(context.Background(), d, w, Options{})
 	if err != nil {
@@ -290,7 +290,7 @@ func TestRestartPropagatesErrNotRunning(t *testing.T) {
 	w := mustWorktree(t, db, "/c", "feature", "/c/feature", "active", now)
 
 	r := &execx.FakeRunner{Responses: map[string]execx.FakeResponse{}}
-	d := Deps{DB: db, Term: wezterm.New(r), Home: t.TempDir(), Live: noLiveSessions, Stat: alwaysExists}
+	d := Deps{DB: db, Term: wezterm.New(r), Live: noLiveSessions, Stat: alwaysExists}
 
 	_, err := Restart(context.Background(), d, w, Options{})
 	if !errors.Is(err, wezterm.ErrNotRunning) {
@@ -322,7 +322,7 @@ func TestRestartAllFiltersByStateResumabilityAndLiveness(t *testing.T) {
 		"wezterm cli set-tab-title --pane-id 2 stale-resumable":                 {},
 		"wezterm cli send-text --pane-id 2 --no-paste claude --resume sess-s\n": {},
 	}}
-	d := Deps{DB: db, Term: wezterm.New(r), Home: t.TempDir(), Live: noLiveSessions, Stat: alwaysExists}
+	d := Deps{DB: db, Term: wezterm.New(r), Live: noLiveSessions, Stat: alwaysExists}
 
 	actions, err := RestartAll(context.Background(), d, nil)
 	if err != nil {
@@ -356,7 +356,7 @@ func TestRestartAllCustomStatesFlag(t *testing.T) {
 		"wezterm cli set-tab-title --pane-id 9 merged-resumable":                {},
 		"wezterm cli send-text --pane-id 9 --no-paste claude --resume sess-m\n": {},
 	}}
-	d := Deps{DB: db, Term: wezterm.New(r), Home: t.TempDir(), Live: noLiveSessions, Stat: alwaysExists}
+	d := Deps{DB: db, Term: wezterm.New(r), Live: noLiveSessions, Stat: alwaysExists}
 
 	actions, err := RestartAll(context.Background(), d, []string{"merged"})
 	if err != nil {
@@ -386,7 +386,7 @@ func TestRestartAllSkipsLiveWorktreesButKeepsGoing(t *testing.T) {
 		"wezterm cli set-tab-title --pane-id 3 not-live":                            {},
 		"wezterm cli send-text --pane-id 3 --no-paste claude --resume sess-other\n": {},
 	}}
-	d := Deps{DB: db, Term: wezterm.New(r), Home: t.TempDir(), Live: liveFn, Stat: alwaysExists}
+	d := Deps{DB: db, Term: wezterm.New(r), Live: liveFn, Stat: alwaysExists}
 
 	actions, err := RestartAll(context.Background(), d, []string{"active"})
 	if err != nil {
@@ -432,21 +432,24 @@ func TestRestartAllCollectsPerWorktreeErrorsWithoutAborting(t *testing.T) {
 		"wezterm cli set-tab-title --pane-id 4 healthy":                               {},
 		"wezterm cli send-text --pane-id 4 --no-paste claude --resume sess-healthy\n": {},
 	}}
-	d := Deps{DB: db, Term: wezterm.New(r), Home: t.TempDir(), Live: noLiveSessions, Stat: alwaysExists}
+	d := Deps{DB: db, Term: wezterm.New(r), Live: noLiveSessions, Stat: alwaysExists}
 
 	actions, err := RestartAll(context.Background(), d, []string{"active"})
 	if err != nil {
 		t.Fatalf("RestartAll: %v", err)
 	}
 	if len(actions) != 2 {
-		t.Fatalf("actions = %+v, want 2 (broken recorded as skipped, healthy restarted)", actions)
+		t.Fatalf("actions = %+v, want 2 (broken recorded as failed, healthy restarted)", actions)
 	}
 	brokenAction, brokenOK := findByName(actions, "broken")
 	healthyAction, healthyOK := findByName(actions, "healthy")
-	if !brokenOK || !brokenAction.Skipped || brokenAction.Reason == "" {
-		t.Fatalf("broken action = %+v (ok=%v), want skipped with a reason", brokenAction, brokenOK)
+	// A per-worktree error is a Failed action, not a Skipped one: Skipped is
+	// reserved for the deliberate live-session guard, so a report can tell
+	// "nothing needed doing" apart from "something went wrong".
+	if !brokenOK || !brokenAction.Failed || brokenAction.Skipped || brokenAction.Reason == "" {
+		t.Fatalf("broken action = %+v (ok=%v), want Failed=true, Skipped=false, with a reason", brokenAction, brokenOK)
 	}
-	if !healthyOK || healthyAction.Skipped {
+	if !healthyOK || healthyAction.Skipped || healthyAction.Failed {
 		t.Fatalf("healthy action = %+v (ok=%v), want a successful restart", healthyAction, healthyOK)
 	}
 }
@@ -459,7 +462,7 @@ func TestRestartAllAbortsOnErrNotRunning(t *testing.T) {
 	mustSession(t, db, store.SessionScan{SessionID: "sess-1", WorktreeID: w.ID, ProjectDir: "/pd", JSONLExists: true}, now)
 
 	r := &execx.FakeRunner{Responses: map[string]execx.FakeResponse{}}
-	d := Deps{DB: db, Term: wezterm.New(r), Home: t.TempDir(), Live: noLiveSessions, Stat: alwaysExists}
+	d := Deps{DB: db, Term: wezterm.New(r), Live: noLiveSessions, Stat: alwaysExists}
 
 	_, err := RestartAll(context.Background(), d, []string{"active"})
 	if !errors.Is(err, wezterm.ErrNotRunning) {

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -15,6 +16,45 @@ import (
 	"github.com/ssoriche/quipu/pkg/execx"
 	"github.com/ssoriche/quipu/pkg/store"
 )
+
+// onceThenFailListRunner is a execx.Runner test double for simulating
+// wezterm dying partway through a `restart --all` run: its first `wezterm
+// cli list --format json` call succeeds, every later one fails (as
+// wezterm.Client.List maps to ErrNotRunning). execx.FakeRunner can't
+// express this (its canned responses are static per command line, not
+// call-count-dependent), so this small double stands in for it. Every
+// other command line is served from fallback, exactly like FakeRunner.
+type onceThenFailListRunner struct {
+	fallback  map[string]execx.FakeResponse
+	listCalls int
+	Calls     []string
+}
+
+func (r *onceThenFailListRunner) Run(_ context.Context, name string, args ...string) ([]byte, error) {
+	key := name
+	for _, a := range args {
+		key += " " + a
+	}
+	r.Calls = append(r.Calls, key)
+
+	if key == "wezterm cli list --format json" {
+		r.listCalls++
+		if r.listCalls == 1 {
+			return []byte(`[{"pane_id":1,"window_id":100}]`), nil
+		}
+		return nil, fmt.Errorf("mux connection refused")
+	}
+
+	resp, ok := r.fallback[key]
+	if !ok {
+		return nil, fmt.Errorf("onceThenFailListRunner: no fake response for %q", key)
+	}
+	return resp.Stdout, resp.Err
+}
+
+func (r *onceThenFailListRunner) RunDir(_ context.Context, _, _ string, _ ...string) ([]byte, error) {
+	return nil, fmt.Errorf("onceThenFailListRunner: RunDir is not used by wezterm")
+}
 
 // restartTestEnv builds an env rooted at a fresh $HOME-equivalent
 // directory (so the default db path and claudedata reads stay isolated),
@@ -319,5 +359,83 @@ func TestRunRestartAllStatesFlag(t *testing.T) {
 	}
 	if len(got) != 1 || got[0].Worktree != "merged" {
 		t.Fatalf("got = %+v, want just the merged worktree", got)
+	}
+}
+
+// seedTwoRestartableWorktrees registers "/c/first" and "/c/second" (both
+// active, both with a resumable session), returning their sessions' ids in
+// name order — the same order store.ListWorktrees (ORDER BY name) hands
+// them to RestartAll.
+func seedTwoRestartableWorktrees(t *testing.T, db *store.DB, home string, now time.Time) {
+	t.Helper()
+	if err := store.RegisterContainer(db, "/c", "c", now); err != nil {
+		t.Fatalf("RegisterContainer: %v", err)
+	}
+	first, err := store.UpsertWorktree(db, store.WorktreeFacts{ContainerPath: "/c", Name: "first", Path: "/c/first", State: "active"}, now)
+	if err != nil {
+		t.Fatalf("UpsertWorktree first: %v", err)
+	}
+	writeResumableSessionFixture(t, db, home, first, "sess-first", "2026-08-27T11:00:00Z", now)
+
+	second, err := store.UpsertWorktree(db, store.WorktreeFacts{ContainerPath: "/c", Name: "second", Path: "/c/second", State: "active"}, now)
+	if err != nil {
+		t.Fatalf("UpsertWorktree second: %v", err)
+	}
+	writeResumableSessionFixture(t, db, home, second, "sess-second", "2026-08-27T12:00:00Z", now)
+}
+
+func TestRunRestartAllRendersPartialProgressBeforeAbortErrorHuman(t *testing.T) {
+	now := time.Date(2026, 8, 27, 12, 0, 0, 0, time.UTC)
+	r := &onceThenFailListRunner{fallback: map[string]execx.FakeResponse{
+		"wezterm cli spawn --window-id 100 --cwd /c/first":                           {Stdout: []byte("10\n")},
+		"wezterm cli set-tab-title --pane-id 10 first":                               {},
+		"wezterm cli send-text --pane-id 10 --no-paste claude --resume sess-first\n": {},
+	}}
+	e, home, stdout, stderr := restartTestEnv(r, now)
+	defer os.RemoveAll(home)
+	db := openRestartCLITestDB(t, e)
+	seedTwoRestartableWorktrees(t, db, home, now)
+	db.Close()
+
+	// "first" (alphabetically, and thus processed first) completes fully;
+	// wezterm then "dies" (List fails) before "second" can be attempted.
+	code := runRestart(e, []string{"--all"})
+	if code != 2 {
+		t.Fatalf("runRestart --all: exit %d, want 2, stderr=%s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "first") || !strings.Contains(stdout.String(), "sess-first") {
+		t.Fatalf("stdout = %q, want the completed \"first\" action rendered despite the later abort", stdout.String())
+	}
+	if strings.Contains(stdout.String(), "second") {
+		t.Fatalf("stdout = %q, \"second\" was never attempted and must not appear", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "wezterm") {
+		t.Fatalf("stderr = %q, want a message about wezterm not running", stderr.String())
+	}
+}
+
+func TestRunRestartAllRendersPartialProgressBeforeAbortErrorJSON(t *testing.T) {
+	now := time.Date(2026, 8, 27, 12, 0, 0, 0, time.UTC)
+	r := &onceThenFailListRunner{fallback: map[string]execx.FakeResponse{
+		"wezterm cli spawn --window-id 100 --cwd /c/first":                           {Stdout: []byte("10\n")},
+		"wezterm cli set-tab-title --pane-id 10 first":                               {},
+		"wezterm cli send-text --pane-id 10 --no-paste claude --resume sess-first\n": {},
+	}}
+	e, home, stdout, stderr := restartTestEnv(r, now)
+	defer os.RemoveAll(home)
+	db := openRestartCLITestDB(t, e)
+	seedTwoRestartableWorktrees(t, db, home, now)
+	db.Close()
+
+	code := runRestart(e, []string{"--all", "--json"})
+	if code != 2 {
+		t.Fatalf("runRestart --all --json: exit %d, want 2, stderr=%s", code, stderr.String())
+	}
+	var got []restartActionDTO
+	if err := json.Unmarshal(stdout.Bytes(), &got); err != nil {
+		t.Fatalf("unmarshal: %v\n%s", err, stdout.String())
+	}
+	if len(got) != 1 || got[0].Worktree != "first" || !got[0].Resumed || got[0].SessionID != "sess-first" {
+		t.Fatalf("got = %+v, want just the completed \"first\" action", got)
 	}
 }

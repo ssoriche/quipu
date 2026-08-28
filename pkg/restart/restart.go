@@ -16,14 +16,13 @@ import (
 )
 
 // Deps are Restart/RestartAll's dependencies, injected so both are fully
-// testable: a real store, a wezterm client (fake in tests), the Claude home
-// directory, the live-session registry reader, and a jsonl existence check
-// (os.Stat in production, faked in tests so "the file was pruned since the
-// last scan" is exercisable without touching a filesystem).
+// testable: a real store, a wezterm client (fake in tests), the
+// live-session registry reader, and a jsonl existence check (os.Stat in
+// production, faked in tests so "the file was pruned since the last scan"
+// is exercisable without touching a filesystem).
 type Deps struct {
 	DB   *store.DB
 	Term *wezterm.Client
-	Home string
 	Live func() ([]claudedata.LiveSession, error)
 	Stat func(path string) error
 }
@@ -44,12 +43,13 @@ type Options struct {
 // Action records what one Restart call did, for both the single-worktree
 // and --all CLI paths to report.
 type Action struct {
-	WorktreeName string
-	PaneID       int
-	Resumed      bool
-	SessionID    string
-	Skipped      bool
-	Reason       string
+	WorktreeName string // the worktree this action is about
+	PaneID       int    // the pane spawned into (zero when Skipped or Failed)
+	Resumed      bool   // true when SessionID was resumed rather than started fresh
+	SessionID    string // set only when Resumed
+	Skipped      bool   // a deliberate no-op (the live-session guard); Reason explains why
+	Failed       bool   // RestartAll's per-worktree error path; Reason holds the error text
+	Reason       string // human-readable explanation for Skipped or Failed
 }
 
 // DefaultStates is the state set `restart --all` targets when no --states
@@ -80,7 +80,7 @@ func Restart(ctx context.Context, d Deps, w store.Worktree, opts Options) (Actio
 	sessionID, resumable := "", false
 	if !opts.Fresh {
 		var err error
-		sessionID, resumable, err = pickResumableSession(d, w.ID)
+		sessionID, resumable, err = pickResumableSession(d, w)
 		if err != nil {
 			return Action{}, err
 		}
@@ -136,10 +136,10 @@ func liveGuard(d Deps, w store.Worktree) (skip bool, reason string, err error) {
 // tried in turn — a small robustness improvement over stopping at the very
 // first miss, since an older-but-still-present session is strictly better
 // than falling back to a fresh one.
-func pickResumableSession(d Deps, worktreeID int64) (sessionID string, resumable bool, err error) {
-	sessions, err := store.ListSessions(d.DB, worktreeID)
+func pickResumableSession(d Deps, w store.Worktree) (sessionID string, resumable bool, err error) {
+	sessions, err := store.ListSessions(d.DB, w.ID)
 	if err != nil {
-		return "", false, fmt.Errorf("restart: list sessions for worktree %d: %w", worktreeID, err)
+		return "", false, fmt.Errorf("restart: list sessions for worktree %s: %w", w.Name, err)
 	}
 	for _, s := range sessions {
 		if !s.JSONLExists {
@@ -184,10 +184,12 @@ func spawn(ctx context.Context, d Deps, w store.Worktree, opts Options) (int, er
 // open for a worktree still yields a Skipped Action via Restart's own
 // guard, rather than being excluded up front, so --all's report says why.
 //
-// A per-worktree failure is recorded as a Skipped Action with Reason and
+// A per-worktree failure is recorded as a Failed Action with Reason and
 // the loop continues — except wezterm.ErrNotRunning, which aborts the
 // whole run immediately (every remaining worktree would fail identically,
-// and the CLI needs this specific error to map to exit code 2).
+// and the CLI needs this specific error to map to exit code 2). Either way,
+// the actions collected before the abort are still returned alongside the
+// error, so callers can report partial progress.
 func RestartAll(ctx context.Context, d Deps, states []string) ([]Action, error) {
 	if len(states) == 0 {
 		states = DefaultStates
@@ -201,7 +203,7 @@ func RestartAll(ctx context.Context, d Deps, states []string) ([]Action, error) 
 		}
 
 		for _, w := range worktrees {
-			resumable, err := hasResumableSession(d.DB, w.ID)
+			resumable, err := hasResumableSession(d.DB, w)
 			if err != nil {
 				return actions, err
 			}
@@ -214,7 +216,7 @@ func RestartAll(ctx context.Context, d Deps, states []string) ([]Action, error) 
 				if errors.Is(err, wezterm.ErrNotRunning) {
 					return actions, err
 				}
-				actions = append(actions, Action{WorktreeName: w.Name, Skipped: true, Reason: err.Error()})
+				actions = append(actions, Action{WorktreeName: w.Name, Failed: true, Reason: err.Error()})
 				continue
 			}
 			actions = append(actions, action)
@@ -223,13 +225,13 @@ func RestartAll(ctx context.Context, d Deps, states []string) ([]Action, error) 
 	return actions, nil
 }
 
-// hasResumableSession reports whether worktreeID has at least one session
-// row with jsonl_exists=1 — the design spec's --all candidacy check. This
-// is the stored flag only; Restart re-verifies with Stat at spawn time.
-func hasResumableSession(db *store.DB, worktreeID int64) (bool, error) {
-	sessions, err := store.ListSessions(db, worktreeID)
+// hasResumableSession reports whether w has at least one session row with
+// jsonl_exists=1 — the design spec's --all candidacy check. This is the
+// stored flag only; Restart re-verifies with Stat at spawn time.
+func hasResumableSession(db *store.DB, w store.Worktree) (bool, error) {
+	sessions, err := store.ListSessions(db, w.ID)
 	if err != nil {
-		return false, fmt.Errorf("restart --all: list sessions for worktree %d: %w", worktreeID, err)
+		return false, fmt.Errorf("restart --all: list sessions for worktree %s: %w", w.Name, err)
 	}
 	for _, s := range sessions {
 		if s.JSONLExists {
