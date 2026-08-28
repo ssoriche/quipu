@@ -32,9 +32,7 @@ var commands = []string{
 	"claudemd",
 }
 
-// registry maps each implemented subcommand to its handler. Commands not
-// yet implemented (ui — chunk 7) still appear in the usage listing above
-// but have no registry entry.
+// registry maps each implemented subcommand to its handler.
 var registry = map[string]func(env, []string) int{
 	"init":     runInit,
 	"scan":     runScanCmd,
@@ -46,6 +44,7 @@ var registry = map[string]func(env, []string) int{
 	"purpose":  runPurpose,
 	"forget":   runForget,
 	"restart":  runRestart,
+	"ui":       runUI,
 	"hook":     runHook,
 	"hooks":    runHooks,
 	"claudemd": runClaudeMD,

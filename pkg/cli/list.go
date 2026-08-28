@@ -18,6 +18,39 @@ type listRow struct {
 	live      bool
 }
 
+// buildListRows assembles listRow data (each matching worktree, its open
+// task count, and whether any of its sessions is live), unsorted. It is the
+// single row-assembly implementation shared by `quipu list` and `quipu
+// ui` (via the cli layer's Deps wiring in ui.go), so both surfaces show
+// exactly the same facts.
+func buildListRows(db *store.DB, filter store.WorktreeFilter) ([]listRow, error) {
+	worktrees, err := store.ListWorktrees(db, filter)
+	if err != nil {
+		return nil, err
+	}
+
+	rows := make([]listRow, 0, len(worktrees))
+	for _, w := range worktrees {
+		n, err := store.OpenTaskCounts(db, w.ID)
+		if err != nil {
+			return nil, err
+		}
+		sessions, err := store.ListSessions(db, w.ID)
+		if err != nil {
+			return nil, err
+		}
+		live := false
+		for _, s := range sessions {
+			if s.LivePID != nil {
+				live = true
+				break
+			}
+		}
+		rows = append(rows, listRow{worktree: w, openTasks: n, live: live})
+	}
+	return rows, nil
+}
+
 // runList implements `quipu list [--state s] [--container c] [--json]`.
 func runList(e env, args []string) int {
 	fs, dbFlag, jsonFlag := newFlagSet("list")
@@ -33,31 +66,10 @@ func runList(e env, args []string) int {
 	}
 	defer db.Close()
 
-	worktrees, err := store.ListWorktrees(db, store.WorktreeFilter{State: *stateFlag, Container: *containerFlag})
+	rows, err := buildListRows(db, store.WorktreeFilter{State: *stateFlag, Container: *containerFlag})
 	if err != nil {
 		return errf(e, 2, "%v", err)
 	}
-
-	rows := make([]listRow, 0, len(worktrees))
-	for _, w := range worktrees {
-		n, err := store.OpenTaskCounts(db, w.ID)
-		if err != nil {
-			return errf(e, 2, "%v", err)
-		}
-		sessions, err := store.ListSessions(db, w.ID)
-		if err != nil {
-			return errf(e, 2, "%v", err)
-		}
-		live := false
-		for _, s := range sessions {
-			if s.LivePID != nil {
-				live = true
-				break
-			}
-		}
-		rows = append(rows, listRow{worktree: w, openTasks: n, live: live})
-	}
-
 	sortListRows(rows)
 
 	if *jsonFlag {
