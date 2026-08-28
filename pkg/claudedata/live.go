@@ -68,6 +68,10 @@ func LiveSessions(home string, alive func(pid int) bool) ([]LiveSession, error) 
 // still fails for a nonexistent pid). EPERM is treated as alive: it means
 // the process exists but this process lacks permission to signal it, not
 // that the pid is free.
+//
+// This is a POSIX-only assumption (syscall.Kill has no meaningful
+// implementation on Windows); quipu's ~/.claude data and worktree layouts
+// are themselves POSIX-path-shaped, so this is not expected to run there.
 func PIDAlive(pid int) bool {
 	err := syscall.Kill(pid, syscall.Signal(0))
 	if err == nil || err == syscall.EPERM {

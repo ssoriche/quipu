@@ -87,6 +87,34 @@ func TestScanSessionMissingFile(t *testing.T) {
 	}
 }
 
+// TestScanSessionFirstPromptTruncatesMultiByteRunes covers the 500-rune
+// truncation boundary with multi-byte runes: 600 copies of 'あ' (3 bytes each
+// in UTF-8) must yield exactly 500 runes, not 500 bytes (which would split a
+// rune and corrupt the string).
+func TestScanSessionFirstPromptTruncatesMultiByteRunes(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "multibyte.jsonl")
+
+	prompt := strings.Repeat("あ", 600)
+	content := `{"type":"user","timestamp":"2026-01-01T00:00:01Z","message":{"role":"user","content":"` + prompt + `"}}` + "\n"
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write fixture: %v", err)
+	}
+
+	facts, err := ScanSession(path)
+	if err != nil {
+		t.Fatalf("ScanSession: %v", err)
+	}
+	got := []rune(facts.FirstPrompt)
+	if len(got) != 500 {
+		t.Fatalf("FirstPrompt = %d runes, want exactly 500", len(got))
+	}
+	want := strings.Repeat("あ", 500)
+	if facts.FirstPrompt != want {
+		t.Fatalf("FirstPrompt = %q, want 500 copies of \"あ\"", facts.FirstPrompt)
+	}
+}
+
 // TestScanSessionOversizedLineIsSkippedButFollowingLineIsProcessed writes a
 // line far larger than the 10MB cap followed by a valid record, and asserts
 // the valid record is still extracted: a plain bufio.Scanner would abort the

@@ -66,6 +66,9 @@ func ReadSessionTasks(home, sessionID string) ([]TaskFile, error) {
 		})
 	}
 
+	// Atoi errors are ignored: every tasks[i].ID here came from numericStem,
+	// which only accepts strings composed entirely of '0'-'9', so parsing as
+	// a base-10 integer can never fail.
 	sort.Slice(tasks, func(i, j int) bool {
 		ni, _ := strconv.Atoi(tasks[i].ID)
 		nj, _ := strconv.Atoi(tasks[j].ID)
