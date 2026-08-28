@@ -223,9 +223,80 @@ func getWorktreeByID(db *DB, id int64) (Worktree, error) {
 	return scanWorktreeRow(db.QueryRow(worktreeSelect+" WHERE id=?", id))
 }
 
+// ListContainers returns every registered container, ordered by path.
+func ListContainers(db *DB) ([]Container, error) {
+	rows, err := db.Query(`SELECT path, name, added_at FROM containers ORDER BY path`)
+	if err != nil {
+		return nil, fmt.Errorf("store: list containers: %w", err)
+	}
+	defer rows.Close()
+
+	var out []Container
+	for rows.Next() {
+		var c Container
+		if err := rows.Scan(&c.Path, &c.Name, &c.AddedAt); err != nil {
+			return nil, fmt.Errorf("store: scan container row: %w", err)
+		}
+		out = append(out, c)
+	}
+	return out, rows.Err()
+}
+
+// GetContainer looks up a single registered container by path. ok is false
+// (with a nil error) when no such container is registered.
+func GetContainer(db *DB, path string) (Container, bool, error) {
+	var c Container
+	err := db.QueryRow(`SELECT path, name, added_at FROM containers WHERE path=?`, path).Scan(&c.Path, &c.Name, &c.AddedAt)
+	if err == sql.ErrNoRows {
+		return Container{}, false, nil
+	}
+	if err != nil {
+		return Container{}, false, fmt.Errorf("store: get container %s: %w", path, err)
+	}
+	return c, true, nil
+}
+
+// GetWorktreeByID looks up a worktree by its primary key.
+func GetWorktreeByID(db *DB, id int64) (Worktree, error) {
+	return getWorktreeByID(db, id)
+}
+
+// GetWorktreeByContainerAndName looks up a worktree by (container_path, name).
+func GetWorktreeByContainerAndName(db *DB, containerPath, name string) (Worktree, error) {
+	return getWorktreeByContainerAndName(db, containerPath, name)
+}
+
+// FindWorktreesByName returns every worktree row (across all registered
+// containers) whose name matches. Callers decide how to handle zero or
+// multiple (ambiguous) matches.
+func FindWorktreesByName(db *DB, name string) ([]Worktree, error) {
+	rows, err := db.Query(worktreeSelect+" WHERE name=? ORDER BY container_path", name)
+	if err != nil {
+		return nil, fmt.Errorf("store: find worktrees named %s: %w", name, err)
+	}
+	defer rows.Close()
+
+	var out []Worktree
+	for rows.Next() {
+		w, err := scanWorktreeRow(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, w)
+	}
+	return out, rows.Err()
+}
+
 const worktreeSelect = `SELECT id, container_path, name, path, COALESCE(branch,''), state, dirty, age_days, COALESCE(purpose,''), COALESCE(purpose_source,''), last_activity, first_seen, last_scanned FROM worktrees`
 
-func scanWorktreeRow(row *sql.Row) (Worktree, error) {
+// rowScanner is satisfied by both *sql.Row and *sql.Rows: their Scan methods
+// share an identical signature, letting one scan helper serve single-row and
+// multi-row queries alike.
+type rowScanner interface {
+	Scan(dest ...any) error
+}
+
+func scanWorktreeRow(row rowScanner) (Worktree, error) {
 	var w Worktree
 	var dirty int
 	err := row.Scan(
@@ -352,7 +423,7 @@ func InsertTask(db *DB, t NewTask, now time.Time) (Task, error) {
 	return task, nil
 }
 
-func scanTaskRow(row *sql.Row) (Task, error) {
+func scanTaskRow(row rowScanner) (Task, error) {
 	var t Task
 	err := row.Scan(
 		&t.ID, &t.WorktreeID, &t.SessionID, &t.Subject, &t.Description, &t.Status, &t.Priority,
@@ -436,15 +507,10 @@ func ListWorktrees(db *DB, filter WorktreeFilter) ([]Worktree, error) {
 
 	var out []Worktree
 	for rows.Next() {
-		var w Worktree
-		var dirty int
-		if err := rows.Scan(
-			&w.ID, &w.ContainerPath, &w.Name, &w.Path, &w.Branch, &w.State, &dirty, &w.AgeDays,
-			&w.Purpose, &w.PurposeSource, &w.LastActivity, &w.FirstSeen, &w.LastScanned,
-		); err != nil {
-			return nil, fmt.Errorf("store: scan worktree row: %w", err)
+		w, err := scanWorktreeRow(rows)
+		if err != nil {
+			return nil, err
 		}
-		w.Dirty = dirty != 0
 		out = append(out, w)
 	}
 	if err := rows.Err(); err != nil {
@@ -482,6 +548,12 @@ func GetWorktreeDetail(db *DB, worktreeID int64) (WorktreeDetail, error) {
 	}
 
 	return WorktreeDetail{Worktree: w, Sessions: sessions, Tasks: tasks, Events: events}, nil
+}
+
+// ListSessions returns every session belonging to worktreeID, most recently
+// active first.
+func ListSessions(db *DB, worktreeID int64) ([]Session, error) {
+	return listSessions(db, worktreeID)
 }
 
 func listSessions(db *DB, worktreeID int64) ([]Session, error) {
@@ -552,6 +624,74 @@ func listEvents(db *DB, worktreeID int64) ([]Event, error) {
 		out = append(out, e)
 	}
 	return out, rows.Err()
+}
+
+// GetTaskByID looks up a single task by its primary key.
+func GetTaskByID(db *DB, id int64) (Task, error) {
+	task, err := scanTaskRow(db.QueryRow(
+		`SELECT id, worktree_id, session_id, subject, description, status, priority, source, external_key, created_at, updated_at, closed_at
+		 FROM tasks WHERE id=?`, id,
+	))
+	if err != nil {
+		return Task{}, fmt.Errorf("store: get task %d: %w", id, err)
+	}
+	return task, nil
+}
+
+// ListTasks returns worktreeID's tasks, optionally filtered by status (empty
+// status returns every task), oldest first.
+func ListTasks(db *DB, worktreeID int64, status string) ([]Task, error) {
+	query := `SELECT id, worktree_id, session_id, subject, description, status, priority, source, external_key, created_at, updated_at, closed_at
+		FROM tasks WHERE worktree_id=?`
+	args := []any{worktreeID}
+	if status != "" {
+		query += " AND status=?"
+		args = append(args, status)
+	}
+	query += " ORDER BY created_at"
+
+	rows, err := db.Query(query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("store: list tasks for worktree %d: %w", worktreeID, err)
+	}
+	defer rows.Close()
+
+	var out []Task
+	for rows.Next() {
+		t, err := scanTaskRow(rows)
+		if err != nil {
+			return nil, fmt.Errorf("store: scan task row: %w", err)
+		}
+		out = append(out, t)
+	}
+	return out, rows.Err()
+}
+
+// DeleteWorktree deletes worktreeID's events, tasks, sessions, and worktree
+// row, in that FK-safe order, inside a single transaction. Callers enforce
+// any "only when missing" policy before calling this; it always deletes.
+func DeleteWorktree(db *DB, worktreeID int64) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("store: begin delete worktree %d: %w", worktreeID, err)
+	}
+	defer tx.Rollback()
+
+	for _, stmt := range []string{
+		`DELETE FROM events WHERE worktree_id=?`,
+		`DELETE FROM tasks WHERE worktree_id=?`,
+		`DELETE FROM sessions WHERE worktree_id=?`,
+		`DELETE FROM worktrees WHERE id=?`,
+	} {
+		if _, err := tx.Exec(stmt, worktreeID); err != nil {
+			return fmt.Errorf("store: delete worktree %d (%s): %w", worktreeID, stmt, err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("store: commit delete worktree %d: %w", worktreeID, err)
+	}
+	return nil
 }
 
 // OpenTaskCounts returns the number of tasks for worktreeID whose status is

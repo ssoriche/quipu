@@ -444,6 +444,251 @@ func TestListWorktreesFilterContainer(t *testing.T) {
 	}
 }
 
+func TestListContainers(t *testing.T) {
+	db := openTestDB(t)
+	now := time.Date(2026, 8, 27, 12, 0, 0, 0, time.UTC)
+	mustRegisterContainer(t, db, "/c1", "c1", now)
+	mustRegisterContainer(t, db, "/c2", "c2", now)
+
+	containers, err := ListContainers(db)
+	if err != nil {
+		t.Fatalf("ListContainers: %v", err)
+	}
+	if len(containers) != 2 {
+		t.Fatalf("got %d containers, want 2: %+v", len(containers), containers)
+	}
+}
+
+func TestGetContainer(t *testing.T) {
+	db := openTestDB(t)
+	now := time.Date(2026, 8, 27, 12, 0, 0, 0, time.UTC)
+	mustRegisterContainer(t, db, "/c1", "c1", now)
+
+	c, ok, err := GetContainer(db, "/c1")
+	if err != nil {
+		t.Fatalf("GetContainer: %v", err)
+	}
+	if !ok {
+		t.Fatalf("expected container to be found")
+	}
+	if c.Name != "c1" {
+		t.Fatalf("Name = %q, want c1", c.Name)
+	}
+
+	_, ok, err = GetContainer(db, "/nope")
+	if err != nil {
+		t.Fatalf("GetContainer missing: %v", err)
+	}
+	if ok {
+		t.Fatalf("expected not found for /nope")
+	}
+}
+
+func TestListSessionsExported(t *testing.T) {
+	db := openTestDB(t)
+	now := time.Date(2026, 8, 27, 12, 0, 0, 0, time.UTC)
+	mustRegisterContainer(t, db, "/c", "c", now)
+	w, err := UpsertWorktree(db, WorktreeFacts{ContainerPath: "/c", Name: "feature", Path: "/c/feature", State: "active"}, now)
+	if err != nil {
+		t.Fatalf("UpsertWorktree: %v", err)
+	}
+	if err := UpsertSessionScan(db, SessionScan{SessionID: "s1", WorktreeID: w.ID, ProjectDir: "/pd", JSONLExists: true}, now); err != nil {
+		t.Fatalf("UpsertSessionScan: %v", err)
+	}
+
+	sessions, err := ListSessions(db, w.ID)
+	if err != nil {
+		t.Fatalf("ListSessions: %v", err)
+	}
+	if len(sessions) != 1 || sessions[0].SessionID != "s1" {
+		t.Fatalf("unexpected sessions: %+v", sessions)
+	}
+}
+
+func TestGetWorktreeByIDExported(t *testing.T) {
+	db := openTestDB(t)
+	now := time.Date(2026, 8, 27, 12, 0, 0, 0, time.UTC)
+	mustRegisterContainer(t, db, "/c", "c", now)
+	w, err := UpsertWorktree(db, WorktreeFacts{ContainerPath: "/c", Name: "feature", Path: "/c/feature", State: "active"}, now)
+	if err != nil {
+		t.Fatalf("UpsertWorktree: %v", err)
+	}
+
+	got, err := GetWorktreeByID(db, w.ID)
+	if err != nil {
+		t.Fatalf("GetWorktreeByID: %v", err)
+	}
+	if got.Name != "feature" {
+		t.Fatalf("Name = %q, want feature", got.Name)
+	}
+
+	if _, err := GetWorktreeByID(db, 99999); err == nil {
+		t.Fatalf("expected error for unknown id")
+	}
+}
+
+func TestGetWorktreeByContainerAndNameExported(t *testing.T) {
+	db := openTestDB(t)
+	now := time.Date(2026, 8, 27, 12, 0, 0, 0, time.UTC)
+	mustRegisterContainer(t, db, "/c", "c", now)
+	if _, err := UpsertWorktree(db, WorktreeFacts{ContainerPath: "/c", Name: "feature", Path: "/c/feature", State: "active"}, now); err != nil {
+		t.Fatalf("UpsertWorktree: %v", err)
+	}
+
+	got, err := GetWorktreeByContainerAndName(db, "/c", "feature")
+	if err != nil {
+		t.Fatalf("GetWorktreeByContainerAndName: %v", err)
+	}
+	if got.Path != "/c/feature" {
+		t.Fatalf("Path = %q, want /c/feature", got.Path)
+	}
+
+	if _, err := GetWorktreeByContainerAndName(db, "/c", "nope"); err == nil {
+		t.Fatalf("expected error for unknown worktree")
+	}
+}
+
+func TestFindWorktreesByName(t *testing.T) {
+	db := openTestDB(t)
+	now := time.Date(2026, 8, 27, 12, 0, 0, 0, time.UTC)
+	mustRegisterContainer(t, db, "/c1", "c1", now)
+	mustRegisterContainer(t, db, "/c2", "c2", now)
+	if _, err := UpsertWorktree(db, WorktreeFacts{ContainerPath: "/c1", Name: "feature", Path: "/c1/feature", State: "active"}, now); err != nil {
+		t.Fatalf("UpsertWorktree c1: %v", err)
+	}
+	if _, err := UpsertWorktree(db, WorktreeFacts{ContainerPath: "/c2", Name: "feature", Path: "/c2/feature", State: "active"}, now); err != nil {
+		t.Fatalf("UpsertWorktree c2: %v", err)
+	}
+	if _, err := UpsertWorktree(db, WorktreeFacts{ContainerPath: "/c2", Name: "other", Path: "/c2/other", State: "active"}, now); err != nil {
+		t.Fatalf("UpsertWorktree other: %v", err)
+	}
+
+	matches, err := FindWorktreesByName(db, "feature")
+	if err != nil {
+		t.Fatalf("FindWorktreesByName: %v", err)
+	}
+	if len(matches) != 2 {
+		t.Fatalf("got %d matches, want 2 (ambiguous across containers): %+v", len(matches), matches)
+	}
+
+	single, err := FindWorktreesByName(db, "other")
+	if err != nil {
+		t.Fatalf("FindWorktreesByName other: %v", err)
+	}
+	if len(single) != 1 {
+		t.Fatalf("got %d matches, want 1: %+v", len(single), single)
+	}
+}
+
+func TestGetTaskByID(t *testing.T) {
+	db := openTestDB(t)
+	now := time.Date(2026, 8, 27, 12, 0, 0, 0, time.UTC)
+	mustRegisterContainer(t, db, "/c", "c", now)
+	w, err := UpsertWorktree(db, WorktreeFacts{ContainerPath: "/c", Name: "feature", Path: "/c/feature", State: "active"}, now)
+	if err != nil {
+		t.Fatalf("UpsertWorktree: %v", err)
+	}
+	task, err := InsertTask(db, NewTask{WorktreeID: w.ID, Subject: "a", Status: "open", Priority: 2, Source: "manual"}, now)
+	if err != nil {
+		t.Fatalf("InsertTask: %v", err)
+	}
+
+	got, err := GetTaskByID(db, task.ID)
+	if err != nil {
+		t.Fatalf("GetTaskByID: %v", err)
+	}
+	if got.Subject != "a" {
+		t.Fatalf("Subject = %q, want a", got.Subject)
+	}
+
+	if _, err := GetTaskByID(db, 99999); err == nil {
+		t.Fatalf("expected error for unknown task id")
+	}
+}
+
+func TestListTasksFilterByStatus(t *testing.T) {
+	db := openTestDB(t)
+	now := time.Date(2026, 8, 27, 12, 0, 0, 0, time.UTC)
+	mustRegisterContainer(t, db, "/c", "c", now)
+	w, err := UpsertWorktree(db, WorktreeFacts{ContainerPath: "/c", Name: "feature", Path: "/c/feature", State: "active"}, now)
+	if err != nil {
+		t.Fatalf("UpsertWorktree: %v", err)
+	}
+	if _, err := InsertTask(db, NewTask{WorktreeID: w.ID, Subject: "open one", Status: "open", Priority: 2, Source: "manual"}, now); err != nil {
+		t.Fatalf("InsertTask open: %v", err)
+	}
+	doneTask, err := InsertTask(db, NewTask{WorktreeID: w.ID, Subject: "done one", Status: "open", Priority: 2, Source: "manual"}, now)
+	if err != nil {
+		t.Fatalf("InsertTask done: %v", err)
+	}
+	if err := UpdateTaskStatus(db, doneTask.ID, "done", now); err != nil {
+		t.Fatalf("UpdateTaskStatus: %v", err)
+	}
+
+	all, err := ListTasks(db, w.ID, "")
+	if err != nil {
+		t.Fatalf("ListTasks all: %v", err)
+	}
+	if len(all) != 2 {
+		t.Fatalf("got %d tasks, want 2: %+v", len(all), all)
+	}
+
+	open, err := ListTasks(db, w.ID, "open")
+	if err != nil {
+		t.Fatalf("ListTasks open: %v", err)
+	}
+	if len(open) != 1 || open[0].Subject != "open one" {
+		t.Fatalf("unexpected open tasks: %+v", open)
+	}
+}
+
+func TestDeleteWorktree(t *testing.T) {
+	db := openTestDB(t)
+	now := time.Date(2026, 8, 27, 12, 0, 0, 0, time.UTC)
+	mustRegisterContainer(t, db, "/c", "c", now)
+	w, err := UpsertWorktree(db, WorktreeFacts{ContainerPath: "/c", Name: "feature", Path: "/c/feature", State: "missing"}, now)
+	if err != nil {
+		t.Fatalf("UpsertWorktree: %v", err)
+	}
+	if err := UpsertSessionScan(db, SessionScan{SessionID: "s1", WorktreeID: w.ID, ProjectDir: "/pd", JSONLExists: true}, now); err != nil {
+		t.Fatalf("UpsertSessionScan: %v", err)
+	}
+	sid := "s1"
+	if _, err := InsertTask(db, NewTask{WorktreeID: w.ID, SessionID: &sid, Subject: "a", Status: "open", Priority: 2, Source: "manual"}, now); err != nil {
+		t.Fatalf("InsertTask: %v", err)
+	}
+	if _, err := InsertEvent(db, NewEvent{WorktreeID: w.ID, SessionID: &sid, Kind: "note", Body: "hi"}, now); err != nil {
+		t.Fatalf("InsertEvent: %v", err)
+	}
+
+	if err := DeleteWorktree(db, w.ID); err != nil {
+		t.Fatalf("DeleteWorktree: %v", err)
+	}
+
+	if _, err := GetWorktreeByID(db, w.ID); err == nil {
+		t.Fatalf("expected worktree to be gone")
+	}
+	var n int
+	if err := db.QueryRow(`SELECT count(*) FROM sessions WHERE worktree_id=?`, w.ID).Scan(&n); err != nil {
+		t.Fatalf("count sessions: %v", err)
+	}
+	if n != 0 {
+		t.Fatalf("expected sessions deleted, got %d", n)
+	}
+	if err := db.QueryRow(`SELECT count(*) FROM tasks WHERE worktree_id=?`, w.ID).Scan(&n); err != nil {
+		t.Fatalf("count tasks: %v", err)
+	}
+	if n != 0 {
+		t.Fatalf("expected tasks deleted, got %d", n)
+	}
+	if err := db.QueryRow(`SELECT count(*) FROM events WHERE worktree_id=?`, w.ID).Scan(&n); err != nil {
+		t.Fatalf("count events: %v", err)
+	}
+	if n != 0 {
+		t.Fatalf("expected events deleted, got %d", n)
+	}
+}
+
 func TestListWorktreesAndOpenTaskCounts(t *testing.T) {
 	db := openTestDB(t)
 	now := time.Date(2026, 8, 27, 12, 0, 0, 0, time.UTC)
