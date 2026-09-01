@@ -6,7 +6,7 @@
 }:
 
 let
-  version = "0.1.0";
+  version = "0.1.1";
 in
 # Pin the Go toolchain to 1.26 to satisfy the `go 1.26` directive in go.mod;
 # a sandboxed Nix build cannot download a newer toolchain on demand.
