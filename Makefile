@@ -75,8 +75,26 @@ release: ## Create version bump PR (usage: make release VERSION=x.y.z)
 		echo "Error: Local main is out of sync with origin/main. Run: git pull"; \
 		exit 1; \
 	fi
+	@CURRENT_VERSION=$$(sed -n 's/^[[:space:]]*version = "\(.*\)";$$/\1/p' nix/package.nix); \
+	if [ "$$CURRENT_VERSION" = "$(VERSION)" ]; then \
+		echo "Error: nix/package.nix is already at $(VERSION) -- there is nothing to bump."; \
+		echo "If that version is already on main, skip this step and run:"; \
+		echo "    make tag-release VERSION=$(VERSION)"; \
+		exit 1; \
+	fi
+	@if git rev-parse --verify --quiet "release/v$(VERSION)" >/dev/null; then \
+		echo "Error: branch release/v$(VERSION) already exists."; \
+		echo "Delete it first: git branch -D release/v$(VERSION)"; \
+		exit 1; \
+	fi
 	@git checkout -b "release/v$(VERSION)"
 	@perl -pi -e 's/^(\s*version = ")[^"]*(";)$$/$${1}$(VERSION)$${2}/' nix/package.nix
+	@if [ -z "$$(git status --porcelain nix/package.nix)" ]; then \
+		echo "Error: the version bump did not modify nix/package.nix."; \
+		git checkout main; \
+		git branch -D "release/v$(VERSION)"; \
+		exit 1; \
+	fi
 	@git add nix/package.nix
 	@git commit -m "chore: bump version to $(VERSION)"
 	@git push -u origin "release/v$(VERSION)"
