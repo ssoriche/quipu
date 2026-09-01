@@ -56,3 +56,23 @@ jobs:
 
       - name: Build
         run: go build -v ./cmd/quipu
+
+  nix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      - name: Build flake package
+        run: nix build .#quipu --print-build-logs
+
+      - name: Verify binary runs
+        run: ./result/bin/quipu --version
+
+      - name: Run flake checks
+        run: nix flake check
