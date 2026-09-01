@@ -291,12 +291,18 @@ func TestRestartAllRequiresConfirmation(t *testing.T) {
 	if m.confirmRestartAll {
 		t.Fatalf("expected 'n' to cancel confirmation")
 	}
+	if cmd != nil {
+		t.Fatalf("expected 'n' to only cancel, not act")
+	}
 	if rec.restartAllCalls != 0 {
 		t.Fatalf("RestartAll should not run after cancelling, calls = %d", rec.restartAllCalls)
 	}
 
 	nm, cmd = m.Update(keyRunes("R"))
 	m = nm.(Model)
+	if cmd != nil {
+		t.Fatalf("expected 'R' to only prompt, not act yet")
+	}
 	nm, cmd = m.Update(keyRunes("y"))
 	m = nm.(Model)
 	if m.confirmRestartAll {
