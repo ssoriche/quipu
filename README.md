@@ -27,13 +27,67 @@ history.
 
 ## Install
 
+### From source
+
 ```
 make install
 ```
 
 builds `quipu` and installs it to `~/.local/bin/quipu` (make sure that's on
-`$PATH`). `make check` runs `gofmt`/`go vet`/`go test`/`go build` and should
-be clean before installing.
+`$PATH`). `make check` runs `go fmt`/`go vet`/`golangci-lint`/`go test
+-race`/`go build` and should be clean before installing.
+
+### From a release
+
+Download the archive for your platform from the [releases
+page](https://github.com/ssoriche/quipu/releases), extract it, and put
+`quipu` on your `$PATH`. Releases are built for linux and darwin on both
+amd64 and arm64; quipu is POSIX-only, so there is no Windows build.
+
+### With Nix
+
+```
+nix run github:ssoriche/quipu          # run it once
+nix profile install github:ssoriche/quipu
+```
+
+The flake also exposes `overlays.default` (adds `quipu` to a nixpkgs
+instance) and a `devShells.default` with Go, golangci-lint, and goreleaser
+for working on quipu itself (`nix develop`).
+
+### With go install
+
+```
+go install github.com/ssoriche/quipu/cmd/quipu@latest
+```
+
+## Releasing
+
+The process is codified in the Makefile -- you should not need to remember
+any of it. Two phases, from `main`:
+
+```
+make release VERSION=0.1.0        # 1. bump + branch + push + open PR
+#    ... review and merge the PR, then: git checkout main && git pull
+make tag-release VERSION=0.1.0    # 2. tag + push -> triggers the release
+```
+
+`make release` bumps `version` in `nix/package.nix` (the one place the
+version is written by hand), commits it on `release/v0.1.0`, and opens a
+PR. `make tag-release` refuses unless that bump is actually merged into
+`main` and matches `VERSION`, then pushes the annotated tag. Both targets
+guard on semver, a clean tree, being on `main`, and being in sync with
+`origin/main`; `tag-release` additionally refuses to clobber an existing
+local or remote tag.
+
+Pushing the tag triggers `.github/workflows/release.yaml`, which runs
+goreleaser: it builds the linux/darwin x amd64/arm64 matrix, stamps the
+binary via `-ldflags -X main.version=`, writes `checksums.txt`, and
+publishes the GitHub release with a changelog generated from
+conventional-commit subjects.
+
+Use `make release-snapshot` to dry-run the entire goreleaser build locally
+without tagging or publishing anything.
 
 ## Quickstart
 
@@ -158,6 +212,10 @@ quipu hooks print
 
 quipu claudemd
     Print just the CLAUDE.md snippet (see below).
+
+quipu version
+quipu --version, quipu -v
+    Print the build version.
 ```
 
 ## Setup
