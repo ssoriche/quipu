@@ -1,2 +1,31 @@
+# Binaries
+bin/
+*.exe
 /quipu
+
+# Test artifacts
+coverage.out
+coverage.html
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Go
+vendor/
+
+# GoReleaser
 dist/
+
+# Nix
+result
+result-*
+
+# Worktrees
+.worktrees/
