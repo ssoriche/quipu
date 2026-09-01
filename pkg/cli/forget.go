@@ -27,7 +27,7 @@ func runForget(e env, args []string) int {
 	if err != nil {
 		return errf(e, 2, "%v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	w, err := resolveWorktree(db, e, fs.Arg(0))
 	if err != nil {
@@ -45,6 +45,6 @@ func runForget(e env, args []string) int {
 	if *jsonFlag {
 		return writeJSONOut(e, forgetDTO{Forgot: w.Name})
 	}
-	fmt.Fprintf(e.stdout, "forgot %s\n", w.Name)
+	_, _ = fmt.Fprintf(e.stdout, "forgot %s\n", w.Name)
 	return 0
 }

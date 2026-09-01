@@ -62,7 +62,7 @@ func runInit(e env, args []string) int {
 	if err != nil {
 		return errf(e, 2, "%v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	sum, err := registerAndScan(e, db, container)
 	if err != nil {
@@ -79,7 +79,7 @@ func runInit(e env, args []string) int {
 			Sessions: sum.Sessions, TasksImported: sum.TasksImported, Warnings: sum.Warnings,
 		})
 	}
-	fmt.Fprintf(e.stdout, "registered %s (%s): %d worktrees, %d sessions, %d tasks imported\n",
+	_, _ = fmt.Fprintf(e.stdout, "registered %s (%s): %d worktrees, %d sessions, %d tasks imported\n",
 		container, name, sum.Worktrees, sum.Sessions, sum.TasksImported)
 	return 0
 }

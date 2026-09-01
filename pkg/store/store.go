@@ -96,13 +96,13 @@ func Open(path string) (*DB, error) {
 		return nil, fmt.Errorf("store: open %s: %w", path, err)
 	}
 	if err := sqldb.Ping(); err != nil {
-		sqldb.Close()
+		_ = sqldb.Close()
 		return nil, fmt.Errorf("store: ping %s: %w", path, err)
 	}
 
 	db := &DB{DB: sqldb}
 	if err := migrate(db); err != nil {
-		sqldb.Close()
+		_ = sqldb.Close()
 		return nil, err
 	}
 	return db, nil
@@ -121,7 +121,7 @@ func migrate(db *DB) error {
 	if err != nil {
 		return fmt.Errorf("store: begin migration: %w", err)
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	if _, err := tx.Exec(schemaV1); err != nil {
 		return fmt.Errorf("store: apply schema v1: %w", err)

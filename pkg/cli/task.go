@@ -47,7 +47,7 @@ func runTaskAdd(e env, args []string) int {
 	if err != nil {
 		return errf(e, 2, "%v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	w, err := resolveWorktree(db, e, *worktreeFlag)
 	if err != nil {
@@ -75,7 +75,7 @@ func runTaskAdd(e env, args []string) int {
 	if *jsonFlag {
 		return writeJSONOut(e, newTaskDTO(task))
 	}
-	fmt.Fprintf(e.stdout, "%s created: %s\n", taskDisplayID(task.ID), task.Subject)
+	_, _ = fmt.Fprintf(e.stdout, "%s created: %s\n", taskDisplayID(task.ID), task.Subject)
 	return 0
 }
 
@@ -92,7 +92,7 @@ func runTaskList(e env, args []string) int {
 	if err != nil {
 		return errf(e, 2, "%v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	w, err := resolveWorktree(db, e, *worktreeFlag)
 	if err != nil {
@@ -108,7 +108,7 @@ func runTaskList(e env, args []string) int {
 		return writeJSONOut(e, newTaskDTOs(tasks))
 	}
 	for _, t := range tasks {
-		fmt.Fprintf(e.stdout, "%s\t%s\t%s\n", taskDisplayID(t.ID), t.Status, t.Subject)
+		_, _ = fmt.Fprintf(e.stdout, "%s\t%s\t%s\n", taskDisplayID(t.ID), t.Status, t.Subject)
 	}
 	return 0
 }
@@ -132,7 +132,7 @@ func runTaskSetStatus(e env, args []string, status string) int {
 	if err != nil {
 		return errf(e, 2, "%v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	if _, err := store.GetTaskByID(db, id); err != nil {
 		return errf(e, 1, "unknown task %s", taskDisplayID(id))
@@ -148,6 +148,6 @@ func runTaskSetStatus(e env, args []string, status string) int {
 	if *jsonFlag {
 		return writeJSONOut(e, newTaskDTO(task))
 	}
-	fmt.Fprintf(e.stdout, "%s -> %s\n", taskDisplayID(id), status)
+	_, _ = fmt.Fprintf(e.stdout, "%s -> %s\n", taskDisplayID(id), status)
 	return 0
 }

@@ -229,7 +229,7 @@ func ListContainers(db *DB) ([]Container, error) {
 	if err != nil {
 		return nil, fmt.Errorf("store: list containers: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var out []Container
 	for rows.Next() {
@@ -282,7 +282,7 @@ func FindWorktreesByName(db *DB, name string) ([]Worktree, error) {
 	if err != nil {
 		return nil, fmt.Errorf("store: find worktrees named %s: %w", name, err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var out []Worktree
 	for rows.Next() {
@@ -534,7 +534,7 @@ func ListWorktrees(db *DB, filter WorktreeFilter) ([]Worktree, error) {
 	if err != nil {
 		return nil, fmt.Errorf("store: list worktrees: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var out []Worktree
 	for rows.Next() {
@@ -595,7 +595,7 @@ func listSessions(db *DB, worktreeID int64) ([]Session, error) {
 	if err != nil {
 		return nil, fmt.Errorf("store: list sessions for worktree %d: %w", worktreeID, err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var out []Session
 	for rows.Next() {
@@ -621,7 +621,7 @@ func listTasks(db *DB, worktreeID int64) ([]Task, error) {
 	if err != nil {
 		return nil, fmt.Errorf("store: list tasks for worktree %d: %w", worktreeID, err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var out []Task
 	for rows.Next() {
@@ -644,7 +644,7 @@ func listEvents(db *DB, worktreeID int64) ([]Event, error) {
 	if err != nil {
 		return nil, fmt.Errorf("store: list events for worktree %d: %w", worktreeID, err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var out []Event
 	for rows.Next() {
@@ -685,7 +685,7 @@ func ListTasks(db *DB, worktreeID int64, status string) ([]Task, error) {
 	if err != nil {
 		return nil, fmt.Errorf("store: list tasks for worktree %d: %w", worktreeID, err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var out []Task
 	for rows.Next() {
@@ -706,7 +706,7 @@ func DeleteWorktree(db *DB, worktreeID int64) error {
 	if err != nil {
 		return fmt.Errorf("store: begin delete worktree %d: %w", worktreeID, err)
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	for _, stmt := range []string{
 		`DELETE FROM events WHERE worktree_id=?`,

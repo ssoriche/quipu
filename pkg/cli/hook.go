@@ -100,7 +100,7 @@ func runHookSessionStart(e env, _ []string) int {
 	if err != nil {
 		return errf(e, 2, "%v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	w, ok, err := hookWorktree(db, payload.CWD)
 	if err != nil {
@@ -167,7 +167,7 @@ func runHookEndOrStop(e env, kind string) int {
 	if err != nil {
 		return errf(e, 2, "%v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	w, ok, err := hookWorktree(db, payload.CWD)
 	if err != nil {
@@ -227,7 +227,7 @@ func sessionStartContext(d store.WorktreeDetail) string {
 	var b strings.Builder
 
 	if d.Worktree.Purpose != "" {
-		fmt.Fprintf(&b, "purpose: %s\n", d.Worktree.Purpose)
+		_, _ = fmt.Fprintf(&b, "purpose: %s\n", d.Worktree.Purpose)
 	} else {
 		b.WriteString("purpose: (not set)\n")
 	}
@@ -238,7 +238,7 @@ func sessionStartContext(d store.WorktreeDetail) string {
 	} else {
 		b.WriteString("open tasks:\n")
 		for _, t := range open {
-			fmt.Fprintf(&b, "  %s: %s\n", taskDisplayID(t.ID), t.Subject)
+			_, _ = fmt.Fprintf(&b, "  %s: %s\n", taskDisplayID(t.ID), t.Subject)
 		}
 	}
 
@@ -251,7 +251,7 @@ func sessionStartContext(d store.WorktreeDetail) string {
 	} else {
 		b.WriteString("recent events:\n")
 		for _, ev := range events {
-			fmt.Fprintf(&b, "  %s: %s\n", ev.Kind, ev.Body)
+			_, _ = fmt.Fprintf(&b, "  %s: %s\n", ev.Kind, ev.Body)
 		}
 	}
 

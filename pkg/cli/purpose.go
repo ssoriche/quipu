@@ -29,7 +29,7 @@ func runPurpose(e env, args []string) int {
 	if err != nil {
 		return errf(e, 2, "%v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	w, err := resolveWorktree(db, e, *worktreeFlag)
 	if err != nil {
@@ -43,6 +43,6 @@ func runPurpose(e env, args []string) int {
 	if *jsonFlag {
 		return writeJSONOut(e, purposeDTO{Worktree: w.Name, Purpose: text})
 	}
-	fmt.Fprintf(e.stdout, "purpose set for %s: %s\n", w.Name, text)
+	_, _ = fmt.Fprintf(e.stdout, "purpose set for %s: %s\n", w.Name, text)
 	return 0
 }

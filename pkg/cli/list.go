@@ -64,7 +64,7 @@ func runList(e env, args []string) int {
 	if err != nil {
 		return errf(e, 2, "%v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	rows, err := buildListRows(db, store.WorktreeFilter{State: *stateFlag, Container: *containerFlag})
 	if err != nil {
@@ -86,9 +86,9 @@ func runList(e env, args []string) int {
 	}
 
 	tw := tabwriter.NewWriter(e.stdout, 0, 2, 2, ' ', 0)
-	fmt.Fprintln(tw, "NAME\tSTATE\tDIRTY\tPURPOSE\tTASKS\tLIVE\tLAST-ACTIVITY")
+	_, _ = fmt.Fprintln(tw, "NAME\tSTATE\tDIRTY\tPURPOSE\tTASKS\tLIVE\tLAST-ACTIVITY")
 	for _, r := range rows {
-		fmt.Fprintln(tw, formatListRow(r))
+		_, _ = fmt.Fprintln(tw, formatListRow(r))
 	}
 	return errIf(e, tw.Flush())
 }

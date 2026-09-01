@@ -32,14 +32,14 @@ func runHooksInstallGit(e env, positional []string, dryRun bool) int {
 	}
 
 	if dryRun {
-		fmt.Fprintf(e.stdout, "would install git hooks into %s\n", filepath.Join(container, ".bare", "hooks"))
+		_, _ = fmt.Fprintf(e.stdout, "would install git hooks into %s\n", filepath.Join(container, ".bare", "hooks"))
 		return 0
 	}
 
 	if err := hooks.InstallGitHooks(e.ctx, e.runner, container); err != nil {
 		return errf(e, 1, "%v", err)
 	}
-	fmt.Fprintf(e.stdout, "installed git hooks into %s\n", filepath.Join(container, ".bare", "hooks"))
+	_, _ = fmt.Fprintf(e.stdout, "installed git hooks into %s\n", filepath.Join(container, ".bare", "hooks"))
 	return 0
 }
 
@@ -54,7 +54,7 @@ func runHookGitPostCheckout(e env, _ []string) int {
 	if err != nil {
 		return errf(e, 2, "%v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	cwd := absSymlinkResolved(e.cwd)
 	container, ok, err := hookRegisteredContainer(db, cwd)
@@ -95,7 +95,7 @@ func runHookGitPostCommit(e env, _ []string) int {
 	if err != nil {
 		return errf(e, 2, "%v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	cwd := absSymlinkResolved(e.cwd)
 	w, ok, err := hookWorktree(db, cwd)

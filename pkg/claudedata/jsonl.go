@@ -54,7 +54,7 @@ func ScanSession(path string) (SessionFacts, error) {
 	if err != nil {
 		return SessionFacts{}, fmt.Errorf("claudedata: open %s: %w", path, err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	var facts SessionFacts
 	haveFirstPrompt := false
