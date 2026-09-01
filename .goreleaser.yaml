@@ -1,0 +1,77 @@
+version: 2
+
+project_name: quipu
+
+before:
+  hooks:
+    - go mod tidy
+    - go generate ./...
+
+builds:
+  - id: quipu
+    binary: quipu
+    main: ./cmd/quipu
+    env:
+      - CGO_ENABLED=0
+    # quipu is POSIX-only by design: pkg/claudedata uses syscall.Kill and
+    # its ~/.claude + worktree layouts are POSIX-path-shaped.
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+
+archives:
+  - id: default
+    formats: [tar.gz]
+    name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
+
+checksum:
+  name_template: "checksums.txt"
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^ci:"
+      - "^chore:"
+
+release:
+  github:
+    owner: ssoriche
+    name: quipu
+  draft: false
+  prerelease: auto
+  mode: append
+  footer: |
+    ## Installation
+
+    ### Download a release binary
+    Download the archive for your platform, extract it, and place `quipu` in
+    your PATH.
+
+    ```bash
+    # Example for macOS (Apple Silicon)
+    tar -xzf quipu_darwin_arm64.tar.gz
+    chmod +x quipu
+    sudo mv quipu /usr/local/bin/
+    ```
+
+    ### Via Nix
+    ```bash
+    nix run github:ssoriche/quipu
+    ```
+
+    ### Via go install
+    ```bash
+    go install github.com/ssoriche/quipu/cmd/quipu@latest
+    ```
