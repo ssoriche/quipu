@@ -63,8 +63,8 @@ release: ## Create version bump PR (usage: make release VERSION=x.y.z)
 		exit 1; \
 	fi
 	@CURRENT_BRANCH=$$(git rev-parse --abbrev-ref HEAD); \
-	if [ "$$CURRENT_BRANCH" != "main" ]; then \
-		echo "Error: Must be on main branch to release. Currently on $$CURRENT_BRANCH"; \
+	if [ "$$CURRENT_BRANCH" != "main" ] && [ "$$CURRENT_BRANCH" != "release/v$(VERSION)" ]; then \
+		echo "Error: Must be on main or release/v$(VERSION) to release. Currently on $$CURRENT_BRANCH"; \
 		echo "Run: git checkout main && git pull"; \
 		exit 1; \
 	fi
@@ -75,32 +75,44 @@ release: ## Create version bump PR (usage: make release VERSION=x.y.z)
 		echo "Error: Local main is out of sync with origin/main. Run: git pull"; \
 		exit 1; \
 	fi
-	@CURRENT_VERSION=$$(sed -n 's/^[[:space:]]*version = "\(.*\)";$$/\1/p' nix/package.nix); \
-	if [ "$$CURRENT_VERSION" = "$(VERSION)" ]; then \
-		echo "Error: nix/package.nix is already at $(VERSION) -- there is nothing to bump."; \
-		echo "If that version is already on main, skip this step and run:"; \
-		echo "    make tag-release VERSION=$(VERSION)"; \
-		exit 1; \
-	fi
 	@if git rev-parse --verify --quiet "release/v$(VERSION)" >/dev/null; then \
-		echo "Error: branch release/v$(VERSION) already exists."; \
-		echo "Delete it first: git branch -D release/v$(VERSION)"; \
-		exit 1; \
+		BRANCH_VERSION=$$(git show "release/v$(VERSION):nix/package.nix" | sed -n 's/^[[:space:]]*version = "\(.*\)";$$/\1/p'); \
+		if [ "$$BRANCH_VERSION" = "$(VERSION)" ]; then \
+			echo "Resuming: release/v$(VERSION) already has the version bump. Skipping bump+commit."; \
+			git checkout "release/v$(VERSION)"; \
+		else \
+			echo "Error: branch release/v$(VERSION) already exists but does not contain this version's bump (nix/package.nix on that branch is at $$BRANCH_VERSION)."; \
+			echo "Delete it first: git branch -D release/v$(VERSION)"; \
+			exit 1; \
+		fi; \
+	else \
+		CURRENT_VERSION=$$(sed -n 's/^[[:space:]]*version = "\(.*\)";$$/\1/p' nix/package.nix); \
+		if [ "$$CURRENT_VERSION" = "$(VERSION)" ]; then \
+			echo "Error: nix/package.nix is already at $(VERSION) -- there is nothing to bump."; \
+			echo "If that version is already on main, skip this step and run:"; \
+			echo "    make tag-release VERSION=$(VERSION)"; \
+			exit 1; \
+		fi; \
+		git checkout -b "release/v$(VERSION)"; \
+		perl -pi -e 's/^(\s*version = ")[^"]*(";)$$/$${1}$(VERSION)$${2}/' nix/package.nix; \
+		if [ -z "$$(git status --porcelain nix/package.nix)" ]; then \
+			echo "Error: the version bump did not modify nix/package.nix."; \
+			git checkout main; \
+			git branch -D "release/v$(VERSION)"; \
+			exit 1; \
+		fi; \
+		git add nix/package.nix; \
+		git commit -m "chore: bump version to $(VERSION)"; \
 	fi
-	@git checkout -b "release/v$(VERSION)"
-	@perl -pi -e 's/^(\s*version = ")[^"]*(";)$$/$${1}$(VERSION)$${2}/' nix/package.nix
-	@if [ -z "$$(git status --porcelain nix/package.nix)" ]; then \
-		echo "Error: the version bump did not modify nix/package.nix."; \
-		git checkout main; \
-		git branch -D "release/v$(VERSION)"; \
-		exit 1; \
-	fi
-	@git add nix/package.nix
-	@git commit -m "chore: bump version to $(VERSION)"
 	@git push -u origin "release/v$(VERSION)"
-	@printf '## Summary\n\n- Bump version to $(VERSION) in nix/package.nix\n\nAfter merging, run:\n\n    make tag-release VERSION=$(VERSION)\n' \
-		| gh pr create --title "chore: bump version to $(VERSION)" --body-file -
-	@echo "PR created. After merge, run: make tag-release VERSION=$(VERSION)"
+	@EXISTING_PR=$$(gh pr list --head "release/v$(VERSION)" --state open --json url --jq '.[0].url'); \
+	if [ -n "$$EXISTING_PR" ]; then \
+		echo "PR already exists: $$EXISTING_PR"; \
+	else \
+		printf '## Summary\n\n- Bump version to $(VERSION) in nix/package.nix\n\nAfter merging, run:\n\n    make tag-release VERSION=$(VERSION)\n' \
+			| gh pr create --title "chore: bump version to $(VERSION)" --body-file -; \
+	fi
+	@echo "After the PR is merged, run: make tag-release VERSION=$(VERSION)"
 
 # Tag a release after the version bump PR is merged.
 # Pushing the tag triggers .github/workflows/release.yaml, which runs goreleaser.
