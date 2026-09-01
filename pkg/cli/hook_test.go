@@ -46,7 +46,7 @@ func openHookTestDB(t *testing.T, e env) *store.DB {
 	if err != nil {
 		t.Fatalf("store.Open: %v", err)
 	}
-	t.Cleanup(func() { db.Close() })
+	t.Cleanup(func() { _ = db.Close() })
 	return db
 }
 
@@ -107,7 +107,7 @@ func sessionStartAdditionalContext(t *testing.T, stdout []byte) string {
 func TestRunHookSessionStartOutsideRegisteredContainerIsSilent(t *testing.T) {
 	now := time.Date(2026, 8, 27, 12, 0, 0, 0, time.UTC)
 	e, home, stdout, stderr := hookTestEnv(&execx.FakeRunner{}, now)
-	defer os.RemoveAll(home)
+	defer func() { _ = os.RemoveAll(home) }()
 	e.stdin = hookPayloadReader(t, "sess-1", t.TempDir())
 
 	code := runHookSessionStart(e, nil)
@@ -125,7 +125,7 @@ func TestRunHookSessionStartOutsideRegisteredContainerIsSilent(t *testing.T) {
 func TestRunHookSessionStartUnregisteredWorktreeIsSilent(t *testing.T) {
 	now := time.Date(2026, 8, 27, 12, 0, 0, 0, time.UTC)
 	e, home, stdout, _ := hookTestEnv(&execx.FakeRunner{}, now)
-	defer os.RemoveAll(home)
+	defer func() { _ = os.RemoveAll(home) }()
 
 	container, worktreePath := makeFakeContainer(t, "feature")
 	db := openHookTestDB(t, e)
@@ -133,7 +133,7 @@ func TestRunHookSessionStartUnregisteredWorktreeIsSilent(t *testing.T) {
 		t.Fatalf("RegisterContainer: %v", err)
 	}
 	// Deliberately no worktree row: quipu has never scanned this worktree.
-	db.Close()
+	_ = db.Close()
 
 	e.stdin = hookPayloadReader(t, "sess-1", worktreePath)
 	code := runHookSessionStart(e, nil)
@@ -148,7 +148,7 @@ func TestRunHookSessionStartUnregisteredWorktreeIsSilent(t *testing.T) {
 func TestRunHookSessionStartInsideRegisteredWorktree(t *testing.T) {
 	now := time.Date(2026, 8, 27, 12, 0, 0, 0, time.UTC)
 	e, home, stdout, _ := hookTestEnv(&execx.FakeRunner{}, now)
-	defer os.RemoveAll(home)
+	defer func() { _ = os.RemoveAll(home) }()
 
 	container, worktreePath := makeFakeContainer(t, "feature")
 	db := openHookTestDB(t, e)
@@ -168,7 +168,7 @@ func TestRunHookSessionStartInsideRegisteredWorktree(t *testing.T) {
 	if _, err := store.InsertEvent(db, store.NewEvent{WorktreeID: w.ID, Kind: "note", Body: "reproduced the flake locally"}, now); err != nil {
 		t.Fatalf("InsertEvent: %v", err)
 	}
-	db.Close()
+	_ = db.Close()
 
 	e.stdin = hookPayloadReader(t, "sess-abc12345", worktreePath)
 	code := runHookSessionStart(e, nil)
@@ -211,7 +211,7 @@ func TestRunHookSessionStartInsideRegisteredWorktree(t *testing.T) {
 func TestRunHookSessionEndRecordsEventAndActivity(t *testing.T) {
 	now := time.Date(2026, 8, 27, 12, 0, 0, 0, time.UTC)
 	e, home, stdout, _ := hookTestEnv(&execx.FakeRunner{}, now)
-	defer os.RemoveAll(home)
+	defer func() { _ = os.RemoveAll(home) }()
 
 	container, worktreePath := makeFakeContainer(t, "feature")
 	db := openHookTestDB(t, e)
@@ -222,7 +222,7 @@ func TestRunHookSessionEndRecordsEventAndActivity(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpsertWorktree: %v", err)
 	}
-	db.Close()
+	_ = db.Close()
 
 	later := now.Add(time.Hour)
 	e.now = func() time.Time { return later }
@@ -258,7 +258,7 @@ func TestRunHookSessionEndRecordsEventAndActivity(t *testing.T) {
 func TestRunHookStopUpdatesActivityWithoutEvent(t *testing.T) {
 	now := time.Date(2026, 8, 27, 12, 0, 0, 0, time.UTC)
 	e, home, stdout, _ := hookTestEnv(&execx.FakeRunner{}, now)
-	defer os.RemoveAll(home)
+	defer func() { _ = os.RemoveAll(home) }()
 
 	container, worktreePath := makeFakeContainer(t, "feature")
 	db := openHookTestDB(t, e)
@@ -269,7 +269,7 @@ func TestRunHookStopUpdatesActivityWithoutEvent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpsertWorktree: %v", err)
 	}
-	db.Close()
+	_ = db.Close()
 
 	later := now.Add(time.Minute)
 	e.now = func() time.Time { return later }

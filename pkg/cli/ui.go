@@ -29,7 +29,7 @@ func runUI(e env, args []string) int {
 	if err != nil {
 		return errf(e, 2, "%v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	deps := ui.Deps{
 		LoadRows:   func(ctx context.Context) ([]ui.Row, error) { return loadUIRows(db) },

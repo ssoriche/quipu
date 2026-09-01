@@ -46,21 +46,21 @@ func runSetup(e env, args []string) int {
 	if err != nil {
 		return errf(e, 2, "%v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	reader := bufio.NewReader(e.stdin)
 	var summary []string
 	record := func(line string) { summary = append(summary, line) }
 	finish := func(code int) int {
-		fmt.Fprintln(e.stdout, "\nsetup summary:")
+		_, _ = fmt.Fprintln(e.stdout, "\nsetup summary:")
 		for _, line := range summary {
-			fmt.Fprintln(e.stdout, "  "+line)
+			_, _ = fmt.Fprintln(e.stdout, "  "+line)
 		}
 		return code
 	}
 
 	// Step 1: register + scan.
-	fmt.Fprintf(e.stdout, "\n1. Register and scan %s\n", container)
+	_, _ = fmt.Fprintf(e.stdout, "\n1. Register and scan %s\n", container)
 	if *yes || setupConfirm(e, reader, "Register (or, if already registered, rescan) this container with quipu.") {
 		already, err := isContainerRegistered(db, container)
 		if err != nil {
@@ -86,7 +86,7 @@ func runSetup(e env, args []string) int {
 	}
 
 	// Step 2: install the Claude Code hooks.
-	fmt.Fprintf(e.stdout, "\n2. Install Claude Code hooks\n")
+	_, _ = fmt.Fprintf(e.stdout, "\n2. Install Claude Code hooks\n")
 	if *yes || setupConfirm(e, reader, "Merge quipu's SessionStart/SessionEnd/Stop hooks into ~/.claude/settings.json.") {
 		settingsPath, wrote, backupPath, err := installClaudeHooksSettings(e)
 		if err != nil {
@@ -106,7 +106,7 @@ func runSetup(e env, args []string) int {
 	}
 
 	// Step 3: append the CLAUDE.md snippet.
-	fmt.Fprintf(e.stdout, "\n3. Append the quipu CLAUDE.md snippet\n")
+	_, _ = fmt.Fprintf(e.stdout, "\n3. Append the quipu CLAUDE.md snippet\n")
 	if *yes || setupConfirm(e, reader, "Append quipu's block to ~/.claude/CLAUDE.md (creating it if missing; a no-op if it's already present).") {
 		path, wrote, err := appendClaudeMDSnippet(e)
 		if err != nil {
@@ -123,7 +123,7 @@ func runSetup(e env, args []string) int {
 	}
 
 	// Step 4: install the opt-in git hooks.
-	fmt.Fprintf(e.stdout, "\n4. Install git hooks\n")
+	_, _ = fmt.Fprintf(e.stdout, "\n4. Install git hooks\n")
 	hooksDir := filepath.Join(container, ".bare", "hooks")
 	switch {
 	case *noGitHooks:
@@ -156,7 +156,7 @@ func isContainerRegistered(db *store.DB, container string) (bool, error) {
 // empty input, EOF — skips just that step, per the spec's "'n'/anything-
 // but-y skips that step (not abort-all)" rule.
 func setupConfirm(e env, reader *bufio.Reader, description string) bool {
-	fmt.Fprintf(e.stdout, "%s\nproceed? [y/N] ", description)
+	_, _ = fmt.Fprintf(e.stdout, "%s\nproceed? [y/N] ", description)
 	line, _ := reader.ReadString('\n')
 	answer := strings.ToLower(strings.TrimSpace(line))
 	return answer == "y" || answer == "yes"

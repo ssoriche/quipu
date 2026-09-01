@@ -53,7 +53,7 @@ func runRestart(e env, args []string) int {
 	if err != nil {
 		return errf(e, 2, "%v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	d := restart.Deps{
 		DB:   db,
@@ -95,7 +95,7 @@ func runRestart(e env, args []string) int {
 	if *jsonFlag {
 		return writeJSONOut(e, newRestartActionDTO(action))
 	}
-	fmt.Fprintln(e.stdout, formatRestartAction(action))
+	_, _ = fmt.Fprintln(e.stdout, formatRestartAction(action))
 	return 0
 }
 
@@ -135,7 +135,7 @@ func renderRestartActions(e env, actions []restart.Action, asJSON bool) int {
 		return writeJSONOut(e, newRestartActionDTOs(actions))
 	}
 	for _, a := range actions {
-		fmt.Fprintln(e.stdout, formatRestartAction(a))
+		_, _ = fmt.Fprintln(e.stdout, formatRestartAction(a))
 	}
 	return 0
 }

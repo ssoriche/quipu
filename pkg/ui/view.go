@@ -95,14 +95,14 @@ func (m Model) detailView() string {
 	d := m.detail
 
 	var b strings.Builder
-	fmt.Fprintf(&b, "%s  [%s]\n", d.Worktree.Name, styledState(d.Worktree.State))
+	_, _ = fmt.Fprintf(&b, "%s  [%s]\n", d.Worktree.Name, styledState(d.Worktree.State))
 	if d.Worktree.Purpose != "" {
-		fmt.Fprintf(&b, "purpose: %s\n", d.Worktree.Purpose)
+		_, _ = fmt.Fprintf(&b, "purpose: %s\n", d.Worktree.Purpose)
 	}
 	if summary := latestAwaySummary(d.Sessions); summary != "" {
-		fmt.Fprintf(&b, "away: %s\n", summary)
+		_, _ = fmt.Fprintf(&b, "away: %s\n", summary)
 	}
-	fmt.Fprintf(&b, "resume: %s\n", resumeCommand(d.Sessions))
+	_, _ = fmt.Fprintf(&b, "resume: %s\n", resumeCommand(d.Sessions))
 
 	b.WriteString("\nopen tasks:\n")
 	writeOpenTasks(&b, d.Tasks, openTasksLimit)
@@ -139,10 +139,10 @@ func writeOpenTasks(b *strings.Builder, tasks []store.Task, limit int) {
 	}
 	for i, t := range open {
 		if i >= limit {
-			fmt.Fprintf(b, "  ... and %d more\n", len(open)-limit)
+			_, _ = fmt.Fprintf(b, "  ... and %d more\n", len(open)-limit)
 			break
 		}
-		fmt.Fprintf(b, "  qp-%d [%s] %s\n", t.ID, t.Status, t.Subject)
+		_, _ = fmt.Fprintf(b, "  qp-%d [%s] %s\n", t.ID, t.Status, t.Subject)
 	}
 }
 
@@ -153,10 +153,10 @@ func writeRecentEvents(b *strings.Builder, events []store.Event, limit int) {
 	}
 	for i, ev := range events {
 		if i >= limit {
-			fmt.Fprintf(b, "  ... and %d more\n", len(events)-limit)
+			_, _ = fmt.Fprintf(b, "  ... and %d more\n", len(events)-limit)
 			break
 		}
-		fmt.Fprintf(b, "  %s  %s: %s\n", ev.CreatedAt, ev.Kind, ev.Body)
+		_, _ = fmt.Fprintf(b, "  %s  %s: %s\n", ev.CreatedAt, ev.Kind, ev.Body)
 	}
 }
 

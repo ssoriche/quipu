@@ -12,7 +12,7 @@ import (
 func TestRunHookGitPostCheckoutOutsideRegisteredContainerIsSilent(t *testing.T) {
 	now := time.Date(2026, 8, 27, 12, 0, 0, 0, time.UTC)
 	e, home, stdout, stderr := hookTestEnv(&execx.FakeRunner{}, now)
-	defer os.RemoveAll(home)
+	defer func() { _ = os.RemoveAll(home) }()
 
 	_, worktreePath := makeFakeContainer(t, "feature")
 	e.cwd = worktreePath // container is never registered.
@@ -29,14 +29,14 @@ func TestRunHookGitPostCheckoutOutsideRegisteredContainerIsSilent(t *testing.T) 
 func TestRunHookGitPostCheckoutRegistersNewWorktree(t *testing.T) {
 	now := time.Date(2026, 8, 27, 12, 0, 0, 0, time.UTC)
 	e, home, stdout, _ := hookTestEnv(&execx.FakeRunner{}, now)
-	defer os.RemoveAll(home)
+	defer func() { _ = os.RemoveAll(home) }()
 
 	container, worktreePath := makeFakeContainer(t, "feature")
 	db := openHookTestDB(t, e)
 	if err := store.RegisterContainer(db, container, "container", now); err != nil {
 		t.Fatalf("RegisterContainer: %v", err)
 	}
-	db.Close()
+	_ = db.Close()
 
 	e.cwd = worktreePath
 	code := runHookGitPostCheckout(e, nil)
@@ -60,7 +60,7 @@ func TestRunHookGitPostCheckoutRegistersNewWorktree(t *testing.T) {
 func TestRunHookGitPostCommitOutsideRegisteredContainerIsSilent(t *testing.T) {
 	now := time.Date(2026, 8, 27, 12, 0, 0, 0, time.UTC)
 	e, home, stdout, stderr := hookTestEnv(&execx.FakeRunner{}, now)
-	defer os.RemoveAll(home)
+	defer func() { _ = os.RemoveAll(home) }()
 
 	_, worktreePath := makeFakeContainer(t, "feature")
 	e.cwd = worktreePath
@@ -81,7 +81,7 @@ func TestRunHookGitPostCommitInsertsCommitNoteEvent(t *testing.T) {
 		"git -C " + worktreePath + " log -1 --format=%s": {Stdout: []byte("fix: flaky auth test\n")},
 	}}
 	e, home, stdout, _ := hookTestEnv(r, now)
-	defer os.RemoveAll(home)
+	defer func() { _ = os.RemoveAll(home) }()
 
 	db := openHookTestDB(t, e)
 	if err := store.RegisterContainer(db, container, "container", now); err != nil {
@@ -91,7 +91,7 @@ func TestRunHookGitPostCommitInsertsCommitNoteEvent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpsertWorktree: %v", err)
 	}
-	db.Close()
+	_ = db.Close()
 
 	later := now.Add(time.Hour)
 	e.now = func() time.Time { return later }

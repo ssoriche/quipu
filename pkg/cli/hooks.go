@@ -46,11 +46,11 @@ func runHooksPrint(e env, args []string) int {
 		return errf(e, 2, "%v", err)
 	}
 
-	fmt.Fprintln(e.stdout, "# ~/.claude/settings.json hooks block")
-	fmt.Fprintln(e.stdout, string(snippet))
-	fmt.Fprintln(e.stdout)
-	fmt.Fprintln(e.stdout, "# CLAUDE.md snippet")
-	fmt.Fprint(e.stdout, hooks.ClaudeMDSnippet())
+	_, _ = fmt.Fprintln(e.stdout, "# ~/.claude/settings.json hooks block")
+	_, _ = fmt.Fprintln(e.stdout, string(snippet))
+	_, _ = fmt.Fprintln(e.stdout)
+	_, _ = fmt.Fprintln(e.stdout, "# CLAUDE.md snippet")
+	_, _ = fmt.Fprint(e.stdout, hooks.ClaudeMDSnippet())
 	return 0
 }
 
@@ -75,7 +75,7 @@ func runHooksInstall(e env, args []string) int {
 		if err != nil {
 			return errf(e, 2, "%v", err)
 		}
-		fmt.Fprintln(e.stdout, string(merged))
+		_, _ = fmt.Fprintln(e.stdout, string(merged))
 		return 0
 	}
 
@@ -84,9 +84,9 @@ func runHooksInstall(e env, args []string) int {
 		return errf(e, 2, "%v", err)
 	}
 	if wrote {
-		fmt.Fprintf(e.stdout, "installed quipu hooks into %s\n", settingsPath)
+		_, _ = fmt.Fprintf(e.stdout, "installed quipu hooks into %s\n", settingsPath)
 	} else {
-		fmt.Fprintf(e.stdout, "quipu hooks already installed in %s, nothing to do\n", settingsPath)
+		_, _ = fmt.Fprintf(e.stdout, "quipu hooks already installed in %s, nothing to do\n", settingsPath)
 	}
 	return 0
 }

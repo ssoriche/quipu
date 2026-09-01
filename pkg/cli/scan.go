@@ -20,7 +20,7 @@ func runScanCmd(e env, args []string) int {
 	if err != nil {
 		return errf(e, 2, "%v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	opts := scan.Options{Fetch: *fetch, Forge: *forge}
 	if *worktree != "" {
@@ -46,7 +46,7 @@ func runScanCmd(e env, args []string) int {
 	if *jsonFlag {
 		return writeJSONOut(e, sum)
 	}
-	fmt.Fprintf(e.stdout, "scanned %d container(s): %d worktrees, %d sessions, %d tasks imported\n",
+	_, _ = fmt.Fprintf(e.stdout, "scanned %d container(s): %d worktrees, %d sessions, %d tasks imported\n",
 		sum.Containers, sum.Worktrees, sum.Sessions, sum.TasksImported)
 	return 0
 }

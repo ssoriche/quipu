@@ -89,7 +89,7 @@ func openRestartCLITestDB(t *testing.T, e env) *store.DB {
 	if err != nil {
 		t.Fatalf("store.Open: %v", err)
 	}
-	t.Cleanup(func() { db.Close() })
+	t.Cleanup(func() { _ = db.Close() })
 	return db
 }
 
@@ -123,7 +123,7 @@ func TestRunRestartResumesSession(t *testing.T) {
 		"wezterm cli send-text --pane-id 55 --no-paste claude --resume sess-new\n": {},
 	}}
 	e, home, stdout, stderr := restartTestEnv(r, now)
-	defer os.RemoveAll(home)
+	defer func() { _ = os.RemoveAll(home) }()
 	db := openRestartCLITestDB(t, e)
 
 	if err := store.RegisterContainer(db, "/c", "c", now); err != nil {
@@ -134,7 +134,7 @@ func TestRunRestartResumesSession(t *testing.T) {
 		t.Fatalf("UpsertWorktree: %v", err)
 	}
 	writeResumableSessionFixture(t, db, home, w, "sess-new", "2026-08-27T11:00:00Z", now)
-	db.Close()
+	_ = db.Close()
 
 	code := runRestart(e, []string{"feature"})
 	if code != 0 {
@@ -154,7 +154,7 @@ func TestRunRestartJSONOutput(t *testing.T) {
 		"wezterm cli send-text --pane-id 55 --no-paste claude --resume sess-new\n": {},
 	}}
 	e, home, stdout, stderr := restartTestEnv(r, now)
-	defer os.RemoveAll(home)
+	defer func() { _ = os.RemoveAll(home) }()
 	db := openRestartCLITestDB(t, e)
 
 	if err := store.RegisterContainer(db, "/c", "c", now); err != nil {
@@ -165,7 +165,7 @@ func TestRunRestartJSONOutput(t *testing.T) {
 		t.Fatalf("UpsertWorktree: %v", err)
 	}
 	writeResumableSessionFixture(t, db, home, w, "sess-new", "2026-08-27T11:00:00Z", now)
-	db.Close()
+	_ = db.Close()
 
 	code := runRestart(e, []string{"feature", "--json"})
 	if code != 0 {
@@ -189,7 +189,7 @@ func TestRunRestartFreshFlagSkipsResume(t *testing.T) {
 		"wezterm cli send-text --pane-id 55 --no-paste claude\n": {},
 	}}
 	e, home, stdout, stderr := restartTestEnv(r, now)
-	defer os.RemoveAll(home)
+	defer func() { _ = os.RemoveAll(home) }()
 	db := openRestartCLITestDB(t, e)
 
 	if err := store.RegisterContainer(db, "/c", "c", now); err != nil {
@@ -200,7 +200,7 @@ func TestRunRestartFreshFlagSkipsResume(t *testing.T) {
 		t.Fatalf("UpsertWorktree: %v", err)
 	}
 	writeResumableSessionFixture(t, db, home, w, "sess-new", "2026-08-27T11:00:00Z", now)
-	db.Close()
+	_ = db.Close()
 
 	code := runRestart(e, []string{"feature", "--fresh"})
 	if code != 0 {
@@ -217,7 +217,7 @@ func TestRunRestartLiveGuardSkipsUnlessForce(t *testing.T) {
 	// before ever calling wezterm.
 	r := &execx.FakeRunner{Responses: map[string]execx.FakeResponse{}}
 	e, home, stdout, stderr := restartTestEnv(r, now)
-	defer os.RemoveAll(home)
+	defer func() { _ = os.RemoveAll(home) }()
 	db := openRestartCLITestDB(t, e)
 
 	if err := store.RegisterContainer(db, "/c", "c", now); err != nil {
@@ -226,7 +226,7 @@ func TestRunRestartLiveGuardSkipsUnlessForce(t *testing.T) {
 	if _, err := store.UpsertWorktree(db, store.WorktreeFacts{ContainerPath: "/c", Name: "feature", Path: "/c/feature", State: "active"}, now); err != nil {
 		t.Fatalf("UpsertWorktree: %v", err)
 	}
-	db.Close()
+	_ = db.Close()
 
 	liveDir := filepath.Join(home, ".claude", "sessions")
 	if err := os.MkdirAll(liveDir, 0o755); err != nil {
@@ -253,8 +253,8 @@ func TestRunRestartUnknownWorktreeExitsOne(t *testing.T) {
 	now := time.Date(2026, 8, 27, 12, 0, 0, 0, time.UTC)
 	r := &execx.FakeRunner{Responses: map[string]execx.FakeResponse{}}
 	e, home, _, stderr := restartTestEnv(r, now)
-	defer os.RemoveAll(home)
-	openRestartCLITestDB(t, e).Close()
+	defer func() { _ = os.RemoveAll(home) }()
+	_ = openRestartCLITestDB(t, e).Close()
 
 	code := runRestart(e, []string{"nonexistent"})
 	if code != 1 {
@@ -268,7 +268,7 @@ func TestRunRestartErrNotRunningExitsTwo(t *testing.T) {
 	// wezterm client maps to ErrNotRunning.
 	r := &execx.FakeRunner{Responses: map[string]execx.FakeResponse{}}
 	e, home, _, stderr := restartTestEnv(r, now)
-	defer os.RemoveAll(home)
+	defer func() { _ = os.RemoveAll(home) }()
 	db := openRestartCLITestDB(t, e)
 
 	if err := store.RegisterContainer(db, "/c", "c", now); err != nil {
@@ -277,7 +277,7 @@ func TestRunRestartErrNotRunningExitsTwo(t *testing.T) {
 	if _, err := store.UpsertWorktree(db, store.WorktreeFacts{ContainerPath: "/c", Name: "feature", Path: "/c/feature", State: "active"}, now); err != nil {
 		t.Fatalf("UpsertWorktree: %v", err)
 	}
-	db.Close()
+	_ = db.Close()
 
 	code := runRestart(e, []string{"feature"})
 	if code != 2 {
@@ -297,7 +297,7 @@ func TestRunRestartAllHumanAndJSON(t *testing.T) {
 		"wezterm cli send-text --pane-id 55 --no-paste claude --resume sess-new\n": {},
 	}}
 	e, home, stdout, stderr := restartTestEnv(r, now)
-	defer os.RemoveAll(home)
+	defer func() { _ = os.RemoveAll(home) }()
 	db := openRestartCLITestDB(t, e)
 
 	if err := store.RegisterContainer(db, "/c", "c", now); err != nil {
@@ -308,7 +308,7 @@ func TestRunRestartAllHumanAndJSON(t *testing.T) {
 		t.Fatalf("UpsertWorktree: %v", err)
 	}
 	writeResumableSessionFixture(t, db, home, w, "sess-new", "2026-08-27T11:00:00Z", now)
-	db.Close()
+	_ = db.Close()
 
 	code := runRestart(e, []string{"--all"})
 	if code != 0 {
@@ -328,7 +328,7 @@ func TestRunRestartAllStatesFlag(t *testing.T) {
 		"wezterm cli send-text --pane-id 9 --no-paste claude --resume sess-merged\n": {},
 	}}
 	e, home, stdout, stderr := restartTestEnv(r, now)
-	defer os.RemoveAll(home)
+	defer func() { _ = os.RemoveAll(home) }()
 	db := openRestartCLITestDB(t, e)
 
 	if err := store.RegisterContainer(db, "/c", "c", now); err != nil {
@@ -347,7 +347,7 @@ func TestRunRestartAllStatesFlag(t *testing.T) {
 		t.Fatalf("UpsertWorktree merged: %v", err)
 	}
 	writeResumableSessionFixture(t, db, home, merged, "sess-merged", "2026-08-27T11:00:00Z", now)
-	db.Close()
+	_ = db.Close()
 
 	code := runRestart(e, []string{"--all", "--states", "merged", "--json"})
 	if code != 0 {
@@ -392,10 +392,10 @@ func TestRunRestartAllRendersPartialProgressBeforeAbortErrorHuman(t *testing.T) 
 		"wezterm cli send-text --pane-id 10 --no-paste claude --resume sess-first\n": {},
 	}}
 	e, home, stdout, stderr := restartTestEnv(r, now)
-	defer os.RemoveAll(home)
+	defer func() { _ = os.RemoveAll(home) }()
 	db := openRestartCLITestDB(t, e)
 	seedTwoRestartableWorktrees(t, db, home, now)
-	db.Close()
+	_ = db.Close()
 
 	// "first" (alphabetically, and thus processed first) completes fully;
 	// wezterm then "dies" (List fails) before "second" can be attempted.
@@ -422,10 +422,10 @@ func TestRunRestartAllRendersPartialProgressBeforeAbortErrorJSON(t *testing.T) {
 		"wezterm cli send-text --pane-id 10 --no-paste claude --resume sess-first\n": {},
 	}}
 	e, home, stdout, stderr := restartTestEnv(r, now)
-	defer os.RemoveAll(home)
+	defer func() { _ = os.RemoveAll(home) }()
 	db := openRestartCLITestDB(t, e)
 	seedTwoRestartableWorktrees(t, db, home, now)
-	db.Close()
+	_ = db.Close()
 
 	code := runRestart(e, []string{"--all", "--json"})
 	if code != 2 {

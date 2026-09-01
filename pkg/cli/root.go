@@ -65,7 +65,7 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 
 	fn, ok := registry[args[0]]
 	if !ok {
-		fmt.Fprintf(stderr, "quipu: unknown command %q\n\n", args[0])
+		_, _ = fmt.Fprintf(stderr, "quipu: unknown command %q\n\n", args[0])
 		usage(stderr)
 		return 1
 	}
@@ -88,9 +88,9 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 }
 
 func usage(w io.Writer) {
-	fmt.Fprintln(w, "usage: quipu <command> [arguments]")
-	fmt.Fprintln(w, "\ncommands:")
+	_, _ = fmt.Fprintln(w, "usage: quipu <command> [arguments]")
+	_, _ = fmt.Fprintln(w, "\ncommands:")
 	for _, c := range commands {
-		fmt.Fprintf(w, "  %s\n", c)
+		_, _ = fmt.Fprintf(w, "  %s\n", c)
 	}
 }

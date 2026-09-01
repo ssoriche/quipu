@@ -17,7 +17,7 @@ func runClaudeMD(e env, args []string) int {
 	if err := parseArgs(fs, args); err != nil {
 		return errf(e, 1, "%v", err)
 	}
-	fmt.Fprint(e.stdout, hooks.ClaudeMDSnippet())
+	_, _ = fmt.Fprint(e.stdout, hooks.ClaudeMDSnippet())
 	return 0
 }
 
@@ -51,7 +51,7 @@ func appendClaudeMDSnippet(e env) (path string, wrote bool, err error) {
 	if err != nil {
 		return path, false, fmt.Errorf("open %s: %w", path, err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	if _, err := f.WriteString(content); err != nil {
 		return path, false, fmt.Errorf("write %s: %w", path, err)
 	}

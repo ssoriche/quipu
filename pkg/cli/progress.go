@@ -36,14 +36,14 @@ func newProgressFunc(w io.Writer, isTTY bool) (progress func(scan.Event), done f
 				return
 			}
 			lastKey = key
-			fmt.Fprintln(w, renderLine(ev))
+			_, _ = fmt.Fprintln(w, renderLine(ev))
 		}, func() {}
 	}
 
 	return func(ev scan.Event) {
-			fmt.Fprint(w, clearLine, renderLine(ev))
+			_, _ = fmt.Fprint(w, clearLine, renderLine(ev))
 		}, func() {
-			fmt.Fprint(w, clearLine)
+			_, _ = fmt.Fprint(w, clearLine)
 		}
 }
 

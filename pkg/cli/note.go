@@ -34,7 +34,7 @@ func runEventCmd(e env, args []string, kind string) int {
 	if err != nil {
 		return errf(e, 2, "%v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	w, err := resolveWorktree(db, e, *worktreeFlag)
 	if err != nil {
@@ -54,6 +54,6 @@ func runEventCmd(e env, args []string, kind string) int {
 	if *jsonFlag {
 		return writeJSONOut(e, newEventDTO(ev))
 	}
-	fmt.Fprintf(e.stdout, "%s: %s\n", kind, body)
+	_, _ = fmt.Fprintf(e.stdout, "%s: %s\n", kind, body)
 	return 0
 }
