@@ -31,6 +31,7 @@ var commands = []string{
 	"hook",
 	"hooks",
 	"claudemd",
+	"version",
 }
 
 // registry maps each implemented subcommand to its handler.
@@ -50,6 +51,7 @@ var registry = map[string]func(env, []string) int{
 	"hook":     runHook,
 	"hooks":    runHooks,
 	"claudemd": runClaudeMD,
+	"version":  runVersion,
 }
 
 // Run dispatches args[0] as a subcommand and returns the process exit code
@@ -58,6 +60,11 @@ var registry = map[string]func(env, []string) int{
 // exactly once here, so no command or package below it reads the process
 // environment directly.
 func Run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
+	if len(args) > 0 && (args[0] == "--version" || args[0] == "-v") {
+		_, _ = fmt.Fprintln(stdout, Version)
+		return 0
+	}
+
 	if len(args) == 0 {
 		usage(stderr)
 		return 1
