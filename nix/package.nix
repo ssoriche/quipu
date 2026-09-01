@@ -26,7 +26,7 @@ in
     ];
   };
 
-  vendorHash = "sha256-JE7CNrcYNFOWYrq/0dxbAqonuiwZglY5OPHzROCK4e4=";
+  vendorHash = "sha256-NudDGtWK7y6mVxUiylfAyG5pKa9ZH8KX65kO9jIM6Mo=";
 
   subPackages = [ "cmd/quipu" ];
 
