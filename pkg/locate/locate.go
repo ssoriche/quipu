@@ -106,6 +106,11 @@ func Live(ctx context.Context, d Deps) (Report, error) {
 			loc.TabIndex = index[p.TabID]
 			loc.TabCount = count[p.WindowID]
 			loc.TabTitle = p.TabTitle
+			if loc.TabTitle == "" {
+				// Most real tabs have no explicit tab_title; the pane's
+				// Title is what WezTerm's tab bar actually shows then.
+				loc.TabTitle = p.Title
+			}
 			loc.PaneID = p.PaneID
 			loc.Match = match
 		}
