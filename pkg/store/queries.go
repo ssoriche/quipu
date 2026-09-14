@@ -725,12 +725,18 @@ func DeleteWorktree(db *DB, worktreeID int64) error {
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	for _, stmt := range []string{
+	stmts := []string{
 		`DELETE FROM events WHERE worktree_id=?`,
 		`DELETE FROM tasks WHERE worktree_id=?`,
+	}
+	if db.FTS {
+		stmts = append(stmts, `DELETE FROM session_text WHERE session_id IN (SELECT session_id FROM sessions WHERE worktree_id=?)`)
+	}
+	stmts = append(stmts,
 		`DELETE FROM sessions WHERE worktree_id=?`,
 		`DELETE FROM worktrees WHERE id=?`,
-	} {
+	)
+	for _, stmt := range stmts {
 		if _, err := tx.Exec(stmt, worktreeID); err != nil {
 			return fmt.Errorf("store: delete worktree %d (%s): %w", worktreeID, stmt, err)
 		}
@@ -758,6 +764,21 @@ func OpenTaskCounts(db *DB, worktreeID int64) (int, error) {
 
 // ErrBadQuery wraps an FTS5 syntax error in a user-supplied query.
 var ErrBadQuery = errors.New("store: invalid full-text query")
+
+// isFTSQueryError reports whether err looks like FTS5 rejecting a
+// user-supplied MATCH expression as invalid syntax, rather than some other
+// database failure. FTS5 doesn't always prefix these with "fts5:" — a bare
+// column-name token (e.g. "error:") or an unterminated quote surfaces as a
+// generic SQLite parse error instead.
+func isFTSQueryError(err error) bool {
+	msg := err.Error()
+	for _, marker := range []string{"fts5:", "no such column", "unterminated string"} {
+		if strings.Contains(msg, marker) {
+			return true
+		}
+	}
+	return false
+}
 
 // SessionText is one indexed transcript message.
 type SessionText struct {
@@ -909,7 +930,7 @@ func SearchSessions(db *DB, q SearchQuery) ([]SearchHit, error) {
 	}
 	rows, err := db.Query(searchSQL, q.Query, q.WorktreeID, q.WorktreeID, q.Since, q.Since, limit)
 	if err != nil {
-		if strings.Contains(err.Error(), "fts5:") {
+		if isFTSQueryError(err) {
 			return nil, fmt.Errorf("%w: %v", ErrBadQuery, err)
 		}
 		return nil, fmt.Errorf("store: search %q: %w", q.Query, err)
@@ -928,7 +949,7 @@ func SearchSessions(db *DB, q SearchQuery) ([]SearchHit, error) {
 		out = append(out, h)
 	}
 	if err := rows.Err(); err != nil {
-		if strings.Contains(err.Error(), "fts5:") {
+		if isFTSQueryError(err) {
 			return nil, fmt.Errorf("%w: %v", ErrBadQuery, err)
 		}
 		return nil, fmt.Errorf("store: search %q: %w", q.Query, err)
