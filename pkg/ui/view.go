@@ -50,12 +50,15 @@ func (m Model) View() string {
 	b.WriteString("\n")
 	b.WriteString(m.statusLine())
 	b.WriteString("\n")
-	b.WriteString(helpStyle.Render("↑/↓ nav · enter detail · r restart · R restart-all · s scan · f filter · / search · q quit"))
+	b.WriteString(helpStyle.Render("↑/↓ nav · enter detail · r restart · R restart-all · s scan · f filter · / search · ? find · g focus · q quit"))
 	return b.String()
 }
 
 func (m Model) statusLine() string {
 	var parts []string
+	if m.finding {
+		parts = append(parts, "find: "+m.findQuery)
+	}
 	if m.scanning {
 		parts = append(parts, m.spinner.View()+" scanning")
 	}
@@ -103,6 +106,13 @@ func (m Model) detailView() string {
 		_, _ = fmt.Fprintf(&b, "away: %s\n", summary)
 	}
 	_, _ = fmt.Fprintf(&b, "resume: %s\n", resumeCommand(d.Sessions))
+
+	if hits := hitsFor(m.findHits, d.Worktree.Name); len(hits) > 0 {
+		b.WriteString("\nfind hits:\n")
+		for _, h := range hits {
+			fmt.Fprintf(&b, "  %s (%d)  %s\n", h.SessionID, h.Hits, h.Snippet)
+		}
+	}
 
 	b.WriteString("\nopen tasks:\n")
 	writeOpenTasks(&b, d.Tasks, openTasksLimit)
@@ -158,6 +168,18 @@ func writeRecentEvents(b *strings.Builder, events []store.Event, limit int) {
 		}
 		_, _ = fmt.Fprintf(b, "  %s  %s: %s\n", ev.CreatedAt, ev.Kind, ev.Body)
 	}
+}
+
+// hitsFor returns the find hits belonging to worktree, in the order they
+// arrived from Deps.Find.
+func hitsFor(hits []FindHit, worktree string) []FindHit {
+	var out []FindHit
+	for _, h := range hits {
+		if h.Worktree == worktree {
+			out = append(out, h)
+		}
+	}
+	return out
 }
 
 // latestAwaySummary returns the most recently active session's
