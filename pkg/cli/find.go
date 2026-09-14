@@ -145,12 +145,13 @@ func parseSince(s string, now time.Time) (string, error) {
 	var d time.Duration
 	switch {
 	case strings.HasSuffix(s, "d"), strings.HasSuffix(s, "w"):
-		n, err := strconv.Atoi(strings.TrimRight(s, "dw"))
+		unitSuffix := s[len(s)-1:]
+		n, err := strconv.Atoi(strings.TrimSuffix(s, unitSuffix))
 		if err != nil {
 			return "", fmt.Errorf("invalid --since %q (want e.g. 30d, 2w, 12h)", s)
 		}
 		unit := 24 * time.Hour
-		if strings.HasSuffix(s, "w") {
+		if unitSuffix == "w" {
 			unit = 7 * 24 * time.Hour
 		}
 		d = time.Duration(n) * unit

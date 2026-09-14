@@ -2,6 +2,8 @@ package cli
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -46,8 +48,11 @@ func runWhere(e env, args []string) int {
 	var sessions []store.Session
 	if *sessionFlag != "" {
 		s, err := store.GetSession(db, *sessionFlag)
-		if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
 			return errf(e, exitUnknown, "unknown session %q", *sessionFlag)
+		}
+		if err != nil {
+			return errf(e, 2, "%v", err)
 		}
 		if w, err = store.GetWorktreeByID(db, s.WorktreeID); err != nil {
 			return errf(e, 2, "%v", err)
@@ -157,17 +162,22 @@ func focusReport(e env, r whereReport) int {
 	return 0
 }
 
-// singleLocated returns the located entry and how many there were.
+// singleLocated returns the first located entry and how many distinct
+// panes are represented among the located entries — two live sessions
+// sharing one wezterm pane must count as one, so --focus still works.
 func singleLocated(locs []locate.Location) (locate.Location, int) {
 	var found locate.Location
-	n := 0
+	seen := map[int]bool{}
 	for _, l := range locs {
-		if l.Located() {
-			found = l
-			n++
+		if !l.Located() {
+			continue
 		}
+		if len(seen) == 0 {
+			found = l
+		}
+		seen[l.PaneID] = true
 	}
-	return found, n
+	return found, len(seen)
 }
 
 // focusLocated activates loc's tab, then its pane (wezterm has no single
