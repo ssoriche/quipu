@@ -1705,12 +1705,12 @@ func seedSearchFixture(t *testing.T, db *DB) (Worktree, Worktree) {
 	}
 	if err := AppendSessionText(db, "s-spark", []SessionText{
 		{SessionID: "s-spark", Role: "user", TS: "t1", Body: "where did we discuss spark separation batch 2?"},
-		{SessionID: "s-spark", Role: "assistant", TS: "t2", Body: "Batch 2 of the spark separation was here.\nSecond line."},
+		{SessionID: "s-spark", Role: "assistant", TS: "t2", Body: "Batch 2 of the spark separation was here; batch notes follow."},
 	}, 500); err != nil {
 		t.Fatalf("AppendSessionText: %v", err)
 	}
 	if err := AppendSessionText(db, "s-old", []SessionText{
-		{SessionID: "s-old", Role: "user", TS: "t3", Body: "an unrelated batch of cookies"},
+		{SessionID: "s-old", Role: "user", TS: "t3", Body: "an unrelated batch of cookies that we baked for the whole team last weekend"},
 	}, 100); err != nil {
 		t.Fatalf("AppendSessionText old: %v", err)
 	}
