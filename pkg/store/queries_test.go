@@ -1,6 +1,8 @@
 package store
 
 import (
+	"database/sql"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -803,5 +805,31 @@ func TestTouchWorktreeActivity(t *testing.T) {
 	}
 	if got.LastActivity == nil || *got.LastActivity != rfc3339(later) {
 		t.Fatalf("LastActivity = %v, want %s", got.LastActivity, rfc3339(later))
+	}
+}
+
+func TestGetSession(t *testing.T) {
+	db := openTestDB(t)
+	now := time.Date(2026, 9, 14, 12, 0, 0, 0, time.UTC)
+	mustRegisterContainer(t, db, "/c", "c", now)
+	w, err := UpsertWorktree(db, WorktreeFacts{ContainerPath: "/c", Name: "wt", Path: "/c/wt", State: "active"}, now)
+	if err != nil {
+		t.Fatalf("UpsertWorktree: %v", err)
+	}
+	title := "A title"
+	if err := UpsertSessionScan(db, SessionScan{SessionID: "sess-1", WorktreeID: w.ID, ProjectDir: "/pd", JSONLExists: true, AITitle: &title}, now); err != nil {
+		t.Fatalf("UpsertSessionScan: %v", err)
+	}
+
+	s, err := GetSession(db, "sess-1")
+	if err != nil {
+		t.Fatalf("GetSession: %v", err)
+	}
+	if s.WorktreeID != w.ID || s.AITitle == nil || *s.AITitle != "A title" || !s.JSONLExists {
+		t.Fatalf("session = %+v", s)
+	}
+
+	if _, err := GetSession(db, "nope"); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("GetSession unknown: err = %v, want sql.ErrNoRows", err)
 	}
 }
