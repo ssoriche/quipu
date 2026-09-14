@@ -159,6 +159,15 @@ quipu list [--state s] [--container c] [--json]
 quipu show <w> [--json]
     One worktree's full detail: sessions, tasks, events.
 
+quipu where [<w> | --session <id>] [--json]
+    Where a worktree's live Claude session is on screen: path and branch,
+    then per live session its id/title, pid/status, and
+    `window 0 · tab 7 (of 17) · "<tab title>" · pane 25` — tab is the
+    VISIBLE 1-based position, not WezTerm's internal tab id. Not live:
+    prints the `claude --resume <sid>` command instead (exit 0). Works
+    without WezTerm running (reports "no wezterm pane found"). Exit 3 when
+    the worktree/session is unknown to quipu.
+
 quipu task add <subject> [--desc <text>] [--priority 0-3] [-w w]
 quipu task list [--status s] [-w w]
 quipu task start|done|drop <id>
