@@ -12,6 +12,7 @@ func runScanCmd(e env, args []string) int {
 	fetch := fs.Bool("fetch", false, "git fetch --prune origin before scanning")
 	forge := fs.Bool("forge", false, "enable the gh pr view pr-closed check")
 	worktree := fs.String("worktree", "", "scan only this worktree (name or path)")
+	reindex := fs.Bool("reindex", false, "drop the full-text index and rebuild it from every transcript")
 	if err := parseArgs(fs, args); err != nil {
 		return errf(e, 1, "%v", err)
 	}
@@ -22,7 +23,7 @@ func runScanCmd(e env, args []string) int {
 	}
 	defer func() { _ = db.Close() }()
 
-	opts := scan.Options{Fetch: *fetch, Forge: *forge}
+	opts := scan.Options{Fetch: *fetch, Forge: *forge, Reindex: *reindex}
 	if *worktree != "" {
 		w, err := resolveWorktree(db, e, *worktree)
 		if err != nil {
@@ -46,7 +47,7 @@ func runScanCmd(e env, args []string) int {
 	if *jsonFlag {
 		return writeJSONOut(e, sum)
 	}
-	_, _ = fmt.Fprintf(e.stdout, "scanned %d container(s): %d worktrees, %d sessions, %d tasks imported\n",
-		sum.Containers, sum.Worktrees, sum.Sessions, sum.TasksImported)
+	_, _ = fmt.Fprintf(e.stdout, "scanned %d container(s): %d worktrees, %d sessions, %d tasks imported, %d messages indexed\n",
+		sum.Containers, sum.Worktrees, sum.Sessions, sum.TasksImported, sum.Indexed)
 	return 0
 }

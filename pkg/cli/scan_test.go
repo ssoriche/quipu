@@ -66,3 +66,14 @@ func TestRunScanCmdWithWorktreePathFlag(t *testing.T) {
 		t.Fatalf("scan --worktree <path>: exit %d, stdout=%s", code, stdout)
 	}
 }
+
+func TestRunScanReindexFlagAccepted(t *testing.T) {
+	f := newE2EFixture(t)
+	stdout, stderr, code := f.run("scan", "--reindex")
+	if code != 0 {
+		t.Fatalf("scan --reindex: exit %d, stderr=%s", code, stderr)
+	}
+	if !strings.Contains(stdout, "indexed") {
+		t.Fatalf("stdout = %q, want the indexed count in the summary line", stdout)
+	}
+}
