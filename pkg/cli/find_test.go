@@ -13,15 +13,18 @@ import (
 )
 
 // seedFindTranscript writes a transcript for the fixture's feature worktree
-// and scans so it is indexed.
-func seedFindTranscript(t *testing.T, f *e2eFixture, sessionID, text string) {
+// and scans so it is indexed. date (e.g. "2026-09-14") is the date part of
+// both timestamps in the jsonl; scan derives the session's last_activity
+// from the latest transcript timestamp, so date controls the value --since
+// filters on.
+func seedFindTranscript(t *testing.T, f *e2eFixture, sessionID, text, date string) {
 	t.Helper()
 	projectDir := claudedata.ProjectDir(f.home, filepath.Join(f.container, "alice.test-feature"))
 	if err := os.MkdirAll(projectDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	line := `{"type":"user","timestamp":"2026-09-14T10:00:01Z","message":{"role":"user","content":"` + text + `"}}` + "\n" +
-		`{"type":"ai-title","timestamp":"2026-09-14T10:00:02Z","aiTitle":"Spark investigation"}` + "\n"
+	line := `{"type":"user","timestamp":"` + date + `T10:00:01Z","message":{"role":"user","content":"` + text + `"}}` + "\n" +
+		`{"type":"ai-title","timestamp":"` + date + `T10:00:02Z","aiTitle":"Spark investigation"}` + "\n"
 	if err := os.WriteFile(filepath.Join(projectDir, sessionID+".jsonl"), []byte(line), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -32,7 +35,7 @@ func seedFindTranscript(t *testing.T, f *e2eFixture, sessionID, text string) {
 
 func TestRunFindHumanTable(t *testing.T) {
 	f := newE2EFixture(t)
-	seedFindTranscript(t, f, "sess-find", "where did we discuss spark separation batch 2")
+	seedFindTranscript(t, f, "sess-find", "where did we discuss spark separation batch 2", "2026-09-14")
 
 	stdout, stderr, code := f.run("find", "batch", "2")
 	if code != 0 {
@@ -47,7 +50,7 @@ func TestRunFindHumanTable(t *testing.T) {
 
 func TestRunFindJSON(t *testing.T) {
 	f := newE2EFixture(t)
-	seedFindTranscript(t, f, "sess-find", "linkerd flow control discussion")
+	seedFindTranscript(t, f, "sess-find", "linkerd flow control discussion", "2026-09-14")
 
 	stdout, stderr, code := f.run("find", "linkerd", "--json")
 	if code != 0 {
@@ -68,7 +71,7 @@ func TestRunFindJSON(t *testing.T) {
 
 func TestRunFindNoMatchesIsEmptyNotError(t *testing.T) {
 	f := newE2EFixture(t)
-	seedFindTranscript(t, f, "sess-find", "nothing relevant here")
+	seedFindTranscript(t, f, "sess-find", "nothing relevant here", "2026-09-14")
 	stdout, _, code := f.run("find", "zzzzzz", "--json")
 	if code != 0 {
 		t.Fatalf("exit %d", code)
@@ -92,14 +95,43 @@ func TestRunFindArgErrors(t *testing.T) {
 	}
 }
 
+// TestRunFindSinceAndWorktreeFilters exercises both narrowing flags against
+// a session whose activity is six-plus years in the past: unbounded search
+// finds it, --since 30d excludes it on last_activity, and -w main excludes
+// it because it belongs to alice.test-feature.
 func TestRunFindSinceAndWorktreeFilters(t *testing.T) {
 	f := newE2EFixture(t)
-	seedFindTranscript(t, f, "sess-find", "spark again")
-	// Transcript activity is 2026-09-14; a 1-day window relative to a clock
-	// far in the future excludes it, a --w for the other worktree excludes it.
-	if stdout, _, _ := f.run("find", "spark", "-w", "main", "--json"); !strings.Contains(stdout, `"results": []`) {
-		t.Fatalf("-w main should exclude the feature worktree's session:\n%s", stdout)
+	seedFindTranscript(t, f, "sess-find", "spark again", "2020-01-01")
+
+	unbounded := mustFindDTO(t, f, "find", "spark", "--json")
+	if len(unbounded.Results) != 1 {
+		t.Fatalf("unbounded find: got %d results, want 1: %+v", len(unbounded.Results), unbounded)
 	}
+
+	sinceLimited := mustFindDTO(t, f, "find", "spark", "--since", "30d", "--json")
+	if len(sinceLimited.Results) != 0 {
+		t.Fatalf("--since 30d should exclude a 2020 session: %+v", sinceLimited)
+	}
+
+	worktreeLimited := mustFindDTO(t, f, "find", "spark", "-w", "main", "--json")
+	if len(worktreeLimited.Results) != 0 {
+		t.Fatalf("-w main should exclude the feature worktree's session: %+v", worktreeLimited)
+	}
+}
+
+// mustFindDTO runs a `find --json` invocation and unmarshals its stdout,
+// failing the test on a non-zero exit or invalid JSON.
+func mustFindDTO(t *testing.T, f *e2eFixture, args ...string) findDTO {
+	t.Helper()
+	stdout, stderr, code := f.run(args...)
+	if code != 0 {
+		t.Fatalf("%v: exit %d, stderr=%s", args, code, stderr)
+	}
+	var got findDTO
+	if err := json.Unmarshal([]byte(stdout), &got); err != nil {
+		t.Fatalf("%v: unmarshal: %v\n%s", args, err, stdout)
+	}
+	return got
 }
 
 func TestParseSince(t *testing.T) {
