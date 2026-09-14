@@ -587,11 +587,32 @@ func ListSessions(db *DB, worktreeID int64) ([]Session, error) {
 	return listSessions(db, worktreeID)
 }
 
+const sessionSelect = `SELECT session_id, worktree_id, project_dir, jsonl_exists, first_prompt, ai_title,
+	away_summary, git_branch, started_at, last_activity, live_pid, jsonl_size, jsonl_mtime, last_scanned
+	FROM sessions`
+
+func scanSessionRow(row rowScanner) (Session, error) {
+	var s Session
+	var jsonlExists int
+	if err := row.Scan(
+		&s.SessionID, &s.WorktreeID, &s.ProjectDir, &jsonlExists, &s.FirstPrompt, &s.AITitle,
+		&s.AwaySummary, &s.GitBranch, &s.StartedAt, &s.LastActivity, &s.LivePID, &s.JSONLSize,
+		&s.JSONLMtime, &s.LastScanned,
+	); err != nil {
+		return Session{}, fmt.Errorf("store: scan session row: %w", err)
+	}
+	s.JSONLExists = jsonlExists != 0
+	return s, nil
+}
+
+// GetSession looks up one session by id. The error wraps sql.ErrNoRows when
+// quipu has never seen the session.
+func GetSession(db *DB, sessionID string) (Session, error) {
+	return scanSessionRow(db.QueryRow(sessionSelect+" WHERE session_id=?", sessionID))
+}
+
 func listSessions(db *DB, worktreeID int64) ([]Session, error) {
-	rows, err := db.Query(`
-		SELECT session_id, worktree_id, project_dir, jsonl_exists, first_prompt, ai_title,
-		       away_summary, git_branch, started_at, last_activity, live_pid, jsonl_size, jsonl_mtime, last_scanned
-		FROM sessions WHERE worktree_id=? ORDER BY last_activity DESC`, worktreeID)
+	rows, err := db.Query(sessionSelect+" WHERE worktree_id=? ORDER BY last_activity DESC", worktreeID)
 	if err != nil {
 		return nil, fmt.Errorf("store: list sessions for worktree %d: %w", worktreeID, err)
 	}
@@ -599,16 +620,10 @@ func listSessions(db *DB, worktreeID int64) ([]Session, error) {
 
 	var out []Session
 	for rows.Next() {
-		var s Session
-		var jsonlExists int
-		if err := rows.Scan(
-			&s.SessionID, &s.WorktreeID, &s.ProjectDir, &jsonlExists, &s.FirstPrompt, &s.AITitle,
-			&s.AwaySummary, &s.GitBranch, &s.StartedAt, &s.LastActivity, &s.LivePID, &s.JSONLSize,
-			&s.JSONLMtime, &s.LastScanned,
-		); err != nil {
-			return nil, fmt.Errorf("store: scan session row: %w", err)
+		s, err := scanSessionRow(rows)
+		if err != nil {
+			return nil, err
 		}
-		s.JSONLExists = jsonlExists != 0
 		out = append(out, s)
 	}
 	return out, rows.Err()
