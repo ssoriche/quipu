@@ -77,3 +77,17 @@ func TestRunScanReindexFlagAccepted(t *testing.T) {
 		t.Fatalf("stdout = %q, want the indexed count in the summary line", stdout)
 	}
 }
+
+// TestRunScanReindexRejectsWorktreeFlag covers that --reindex (which drops
+// the whole index) refuses to combine with --worktree (which would leave
+// every other worktree's index empty until a later unscoped scan).
+func TestRunScanReindexRejectsWorktreeFlag(t *testing.T) {
+	f := newE2EFixture(t)
+	_, stderr, code := f.run("scan", "--reindex", "--worktree", "main")
+	if code != 1 {
+		t.Fatalf("scan --reindex --worktree main: exit %d, stderr=%s", code, stderr)
+	}
+	if !strings.Contains(stderr, "--reindex") {
+		t.Fatalf("stderr = %q, want it to mention --reindex", stderr)
+	}
+}

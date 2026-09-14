@@ -16,6 +16,9 @@ func runScanCmd(e env, args []string) int {
 	if err := parseArgs(fs, args); err != nil {
 		return errf(e, 1, "%v", err)
 	}
+	if *reindex && *worktree != "" {
+		return errf(e, 1, "--reindex rebuilds the whole index; run it without --worktree")
+	}
 
 	db, err := openDB(e, *dbFlag)
 	if err != nil {

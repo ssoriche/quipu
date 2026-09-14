@@ -41,7 +41,7 @@ type Options struct {
 	Worktree  string      // scan only the worktree matching this path or name; empty = every worktree
 	Fetch     bool        // run `git fetch --prune origin` first
 	Forge     bool        // enable the `gh pr view` pr-closed check
-	Reindex   bool        // drop the full-text index and every indexed_bytes marker before scanning
+	Reindex   bool        // global: drop the full-text index and every indexed_bytes marker for every session, regardless of Container/Worktree narrowing — callers must not combine it with a narrowed scan
 	Progress  func(Event) // optional progress observer; nil = no observer, zero overhead
 }
 
