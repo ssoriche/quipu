@@ -163,6 +163,17 @@ quipu list [--state s] [--container c] [--json]
 quipu show <w> [--json]
     One worktree's full detail: sessions, tasks, events.
 
+quipu find <query...> [--limit n] [--since 30d] [-w <w>] [--json]
+    Full-text search over indexed Claude transcripts (user prompts and
+    assistant replies; tool output is never indexed). The query is FTS5
+    syntax: bare words are ANDed, "batch 2" is a phrase, spark* a prefix,
+    linkerd NEAR flow a proximity match. One row per matching session,
+    best match first, with a highlighted one-line snippet under each:
+    SESSION WORKTREE STATE HITS LAST-ACTIVITY WHERE TITLE. WHERE is the
+    live session's `w0 tab7 "title"` (see `quipu where`). --since takes
+    30d / 2w / 12h. Exit 1 on an FTS5 syntax error, 2 if this sqlite build
+    lacks FTS5.
+
 quipu where [<w> | --session <id>] [--json]
     Where a worktree's live Claude session is on screen: path and branch,
     then per live session its id/title, pid/status, and
