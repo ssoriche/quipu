@@ -313,12 +313,15 @@ This worktree is tracked by quipu. At the start of a session, run
 
 SQLite at `~/.local/state/quipu/quipu.db` (WAL mode, foreign keys on,
 `busy_timeout=5000ms` so concurrent hook invocations retry instead of
-failing). Override per-invocation with `--db <path>`. Five tables:
-`containers`, `worktrees`, `sessions`, `tasks`, `events` — see
-`docs/superpowers/specs/2026-08-27-quipu-design.md`'s "Data model" section
-for the full schema and the rules governing it (manual purpose is sticky;
-missing worktrees keep their history; `quipu forget` is the only way to
-discard it).
+failing). Override per-invocation with `--db <path>`. Six tables:
+`containers`, `worktrees`, `sessions`, `tasks`, `events`, plus an FTS5
+virtual table `session_text` holding indexed transcript text (user
+prompts and assistant replies only) for `quipu find`;
+`sessions.indexed_bytes` is the per-transcript append-only indexing marker
+— see `docs/superpowers/specs/2026-08-27-quipu-design.md`'s "Data model"
+section for the full schema and the rules governing it (manual purpose is
+sticky; missing worktrees keep their history; `quipu forget` is the only
+way to discard it).
 
 ## Relationship to reclaude and git.fish
 

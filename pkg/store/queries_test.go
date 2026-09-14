@@ -833,3 +833,129 @@ func TestGetSession(t *testing.T) {
 		t.Fatalf("GetSession unknown: err = %v, want sql.ErrNoRows", err)
 	}
 }
+
+func seedSearchFixture(t *testing.T, db *DB) (Worktree, Worktree) {
+	t.Helper()
+	now := time.Date(2026, 9, 14, 12, 0, 0, 0, time.UTC)
+	mustRegisterContainer(t, db, "/c", "c", now)
+	a, err := UpsertWorktree(db, WorktreeFacts{ContainerPath: "/c", Name: "spark", Path: "/c/spark", Branch: "sp", State: "active"}, now)
+	if err != nil {
+		t.Fatalf("UpsertWorktree a: %v", err)
+	}
+	b, err := UpsertWorktree(db, WorktreeFacts{ContainerPath: "/c", Name: "other", Path: "/c/other", State: "stale"}, now)
+	if err != nil {
+		t.Fatalf("UpsertWorktree b: %v", err)
+	}
+	old, recent := "2026-08-01T00:00:00Z", "2026-09-13T00:00:00Z"
+	title := "Spark batch 2"
+	for _, s := range []SessionScan{
+		{SessionID: "s-spark", WorktreeID: a.ID, ProjectDir: "/pd", JSONLExists: true, AITitle: &title, LastActivity: &recent},
+		{SessionID: "s-old", WorktreeID: b.ID, ProjectDir: "/pd", JSONLExists: true, LastActivity: &old},
+	} {
+		if err := UpsertSessionScan(db, s, now); err != nil {
+			t.Fatalf("UpsertSessionScan %s: %v", s.SessionID, err)
+		}
+	}
+	if err := AppendSessionText(db, "s-spark", []SessionText{
+		{SessionID: "s-spark", Role: "user", TS: "t1", Body: "where did we discuss spark separation batch 2?"},
+		{SessionID: "s-spark", Role: "assistant", TS: "t2", Body: "Batch 2 of the spark separation was here; batch notes follow."},
+	}, 500); err != nil {
+		t.Fatalf("AppendSessionText: %v", err)
+	}
+	if err := AppendSessionText(db, "s-old", []SessionText{
+		{SessionID: "s-old", Role: "user", TS: "t3", Body: "an unrelated batch of cookies that we baked for the whole team last weekend"},
+	}, 100); err != nil {
+		t.Fatalf("AppendSessionText old: %v", err)
+	}
+	return a, b
+}
+
+func TestSearchSessionsRanksAndAggregates(t *testing.T) {
+	db := openTestDB(t)
+	a, _ := seedSearchFixture(t, db)
+
+	hits, err := SearchSessions(db, SearchQuery{Query: "batch"})
+	if err != nil {
+		t.Fatalf("SearchSessions: %v", err)
+	}
+	if len(hits) != 2 {
+		t.Fatalf("hits = %+v, want 2 sessions", hits)
+	}
+	best := hits[0]
+	if best.SessionID != "s-spark" || best.Hits != 2 || best.WorktreeName != "spark" || best.WorktreeID != a.ID || best.Branch != "sp" || best.AITitle != "Spark batch 2" {
+		t.Fatalf("best = %+v", best)
+	}
+	if !strings.Contains(best.Snippet, "[batch]") && !strings.Contains(best.Snippet, "[Batch]") {
+		t.Fatalf("snippet = %q, want highlighted term", best.Snippet)
+	}
+
+	phrase, err := SearchSessions(db, SearchQuery{Query: `"batch 2"`})
+	if err != nil || len(phrase) != 1 || phrase[0].SessionID != "s-spark" {
+		t.Fatalf("phrase query: hits=%+v err=%v", phrase, err)
+	}
+}
+
+func TestSearchSessionsFilters(t *testing.T) {
+	db := openTestDB(t)
+	_, b := seedSearchFixture(t, db)
+
+	since, err := SearchSessions(db, SearchQuery{Query: "batch", Since: "2026-09-01T00:00:00Z"})
+	if err != nil || len(since) != 1 || since[0].SessionID != "s-spark" {
+		t.Fatalf("since: hits=%+v err=%v", since, err)
+	}
+	byWT, err := SearchSessions(db, SearchQuery{Query: "batch", WorktreeID: b.ID})
+	if err != nil || len(byWT) != 1 || byWT[0].SessionID != "s-old" {
+		t.Fatalf("worktree: hits=%+v err=%v", byWT, err)
+	}
+	limited, err := SearchSessions(db, SearchQuery{Query: "batch", Limit: 1})
+	if err != nil || len(limited) != 1 {
+		t.Fatalf("limit: hits=%+v err=%v", limited, err)
+	}
+	none, err := SearchSessions(db, SearchQuery{Query: "zzzzzz"})
+	if err != nil || len(none) != 0 {
+		t.Fatalf("no match: hits=%+v err=%v", none, err)
+	}
+}
+
+func TestSearchSessionsBadQuery(t *testing.T) {
+	db := openTestDB(t)
+	seedSearchFixture(t, db)
+	_, err := SearchSessions(db, SearchQuery{Query: `batch AND (`})
+	if !errors.Is(err, ErrBadQuery) {
+		t.Fatalf("err = %v, want ErrBadQuery", err)
+	}
+}
+
+func TestResetSessionTextClearsRowsAndMarker(t *testing.T) {
+	db := openTestDB(t)
+	seedSearchFixture(t, db)
+
+	s, _ := GetSession(db, "s-spark")
+	if s.IndexedBytes != 500 {
+		t.Fatalf("IndexedBytes = %d, want 500 after Append", s.IndexedBytes)
+	}
+	if err := ResetSessionText(db, "s-spark"); err != nil {
+		t.Fatalf("ResetSessionText: %v", err)
+	}
+	s, _ = GetSession(db, "s-spark")
+	if s.IndexedBytes != 0 {
+		t.Fatalf("IndexedBytes = %d after reset, want 0", s.IndexedBytes)
+	}
+	hits, _ := SearchSessions(db, SearchQuery{Query: "spark"})
+	if len(hits) != 0 {
+		t.Fatalf("hits after reset = %+v, want none", hits)
+	}
+	other, _ := SearchSessions(db, SearchQuery{Query: "cookies"})
+	if len(other) != 1 {
+		t.Fatalf("other session's rows must survive: %+v", other)
+	}
+
+	if err := ResetAllSessionText(db); err != nil {
+		t.Fatalf("ResetAllSessionText: %v", err)
+	}
+	all, _ := SearchSessions(db, SearchQuery{Query: "cookies"})
+	old, _ := GetSession(db, "s-old")
+	if len(all) != 0 || old.IndexedBytes != 0 {
+		t.Fatalf("ResetAll left hits=%+v indexed=%d", all, old.IndexedBytes)
+	}
+}
