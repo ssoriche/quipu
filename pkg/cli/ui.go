@@ -32,7 +32,7 @@ func runUI(e env, args []string) int {
 	defer func() { _ = db.Close() }()
 
 	deps := ui.Deps{
-		LoadRows:   func(ctx context.Context) ([]ui.Row, error) { return loadUIRows(db) },
+		LoadRows:   func(ctx context.Context) ([]ui.Row, error) { return loadUIRows(e, db) },
 		LoadDetail: func(ctx context.Context, name string) (*store.WorktreeDetail, error) { return loadUIDetail(db, name) },
 		ScanAll: func(ctx context.Context) error {
 			_, err := scan.Scan(ctx, scan.Deps{DB: db, Runner: e.runner, Home: e.home, Now: e.now}, scan.Options{})
@@ -51,9 +51,12 @@ func runUI(e env, args []string) int {
 
 // loadUIRows assembles every worktree row for the dashboard, using the same
 // row-builder and sort order `quipu list` uses (see list.go), then adapts
-// each listRow into ui.Row.
-func loadUIRows(db *store.DB) ([]ui.Row, error) {
-	rows, err := buildListRows(db, store.WorktreeFilter{})
+// each listRow into ui.Row. Locate warnings can't go to stderr under a TUI
+// (they'd corrupt the alt-screen), so this calls locateLive directly and
+// ignores Warnings: a locate failure just means no tab labels this refresh.
+func loadUIRows(e env, db *store.DB) ([]ui.Row, error) {
+	rep, _ := locateLive(e, db)
+	rows, err := buildListRows(db, store.WorktreeFilter{}, rep.Locations)
 	if err != nil {
 		return nil, err
 	}
@@ -69,6 +72,7 @@ func loadUIRows(db *store.DB) ([]ui.Row, error) {
 			OpenTasks:    r.openTasks,
 			LostWork:     r.worktree.State == "missing" && r.openTasks > 0,
 			Live:         r.live,
+			Where:        formatLiveCell(r),
 			LastActivity: derefOrEmpty(r.worktree.LastActivity),
 		}
 	}

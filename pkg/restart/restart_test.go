@@ -111,6 +111,7 @@ func TestRestartResumesLatestSession(t *testing.T) {
 		"wezterm cli spawn --window-id 100 --cwd /c/feature",
 		"wezterm cli set-tab-title --pane-id 55 feature",
 		"wezterm cli send-text --pane-id 55 --no-paste claude --resume sess-new\n",
+		"wezterm cli list --format json",
 	}
 	if len(r.Calls) != len(want) {
 		t.Fatalf("Calls = %v, want %v", r.Calls, want)
@@ -119,6 +120,28 @@ func TestRestartResumesLatestSession(t *testing.T) {
 		if r.Calls[i] != c {
 			t.Fatalf("Calls[%d] = %q, want %q", i, r.Calls[i], c)
 		}
+	}
+}
+
+// TestRestartReportsVisibleTabPosition: after spawning, Restart lists panes
+// again and reports the window and 1-based visible tab of the new pane.
+func TestRestartReportsVisibleTabPosition(t *testing.T) {
+	db := openRestartTestDB(t)
+	now := time.Date(2026, 8, 27, 12, 0, 0, 0, time.UTC)
+	w := mustWorktree(t, db, "/c", "feature", "/c/feature", "active", now)
+	r := &execx.FakeRunner{Responses: map[string]execx.FakeResponse{
+		"wezterm cli list --format json":                         {Stdout: []byte(`[{"pane_id":1,"window_id":100,"tab_id":40},{"pane_id":55,"window_id":100,"tab_id":41}]`)},
+		"wezterm cli spawn --window-id 100 --cwd /c/feature":     {Stdout: []byte("55\n")},
+		"wezterm cli set-tab-title --pane-id 55 feature":         {},
+		"wezterm cli send-text --pane-id 55 --no-paste claude\n": {},
+	}}
+	d := Deps{DB: db, Term: wezterm.New(r), Live: noLiveSessions, Stat: alwaysExists}
+	action, err := Restart(context.Background(), d, w, Options{})
+	if err != nil {
+		t.Fatalf("Restart: %v", err)
+	}
+	if action.WindowID != 100 || action.TabID != 41 || action.TabIndex != 2 {
+		t.Fatalf("action = %+v, want window 100 tab index 2 (tab id 41)", action)
 	}
 }
 
@@ -210,9 +233,11 @@ func TestRestartFallsBackToOlderResumableSessionWhenNewestIsPruned(t *testing.T)
 		t.Fatalf("action = %+v, want the older still-present session resumed", action)
 	}
 
+	// The final call is Restart's post-spawn List for tab-position reporting;
+	// the send-text call is the one immediately before it.
 	want := "wezterm cli send-text --pane-id 55 --no-paste claude --resume sess-older\n"
-	if len(r.Calls) == 0 || r.Calls[len(r.Calls)-1] != want {
-		t.Fatalf("Calls = %v, want the last call to be %q", r.Calls, want)
+	if len(r.Calls) < 2 || r.Calls[len(r.Calls)-2] != want {
+		t.Fatalf("Calls = %v, want the second-to-last call to be %q", r.Calls, want)
 	}
 }
 

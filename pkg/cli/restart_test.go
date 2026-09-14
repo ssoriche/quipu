@@ -14,6 +14,7 @@ import (
 
 	"github.com/ssoriche/quipu/pkg/claudedata"
 	"github.com/ssoriche/quipu/pkg/execx"
+	"github.com/ssoriche/quipu/pkg/restart"
 	"github.com/ssoriche/quipu/pkg/store"
 )
 
@@ -111,6 +112,17 @@ func writeResumableSessionFixture(t *testing.T, db *store.DB, home string, w sto
 		JSONLExists: true, LastActivity: &la,
 	}, now); err != nil {
 		t.Fatalf("UpsertSessionScan: %v", err)
+	}
+}
+
+func TestFormatRestartActionMentionsTab(t *testing.T) {
+	a := restart.Action{WorktreeName: "feature", Resumed: true, SessionID: "s1", PaneID: 33, WindowID: 0, TabID: 9, TabIndex: 18}
+	if got := formatRestartAction(a); got != "feature: resumed s1 in window 0 tab 18 (pane 33)" {
+		t.Fatalf("got %q", got)
+	}
+	b := restart.Action{WorktreeName: "feature", Resumed: true, SessionID: "s1", PaneID: 33}
+	if got := formatRestartAction(b); got != "feature: resumed s1 in pane 33" {
+		t.Fatalf("fallback got %q", got)
 	}
 }
 
