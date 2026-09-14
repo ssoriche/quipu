@@ -139,7 +139,7 @@ quipu init [path]
     Register a bare-layout container (path, or detected by walking up from
     cwd) and run an implicit scan.
 
-quipu scan [--fetch] [--forge] [--worktree <w>]
+quipu scan [--fetch] [--forge] [--worktree <w>] [--reindex]
     Rediscover every registered container's worktrees, classify their
     lifecycle state, and mine each one's Claude Code data (jsonl
     transcripts, sessions-index.json, task files, the live-session
@@ -147,8 +147,11 @@ quipu scan [--fetch] [--forge] [--worktree <w>]
     a failure is a warning, not an error). --forge enables the `gh pr view`
     pr-closed check (one network call per worktree). --worktree scans only
     that worktree instead of every worktree in every registered container.
-    Progress prints to stderr as it goes: in place if stderr is a TTY, one
-    summary line per phase otherwise.
+    --reindex drops the full-text index (used by `quipu find`) and rebuilds
+    it. Indexing is incremental and on by default: each scan indexes only
+    transcript bytes appended since the last one. Progress prints to
+    stderr as it goes: in place if stderr is a TTY, one summary line per
+    phase otherwise.
 
 quipu list [--state s] [--container c] [--json]
     Table: NAME STATE DIRTY PURPOSE TASKS LIVE LAST-ACTIVITY, sorted by
