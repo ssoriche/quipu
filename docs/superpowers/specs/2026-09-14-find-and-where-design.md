@@ -1,7 +1,7 @@
 # quipu find / where — locate a discussion and the tab it lives in
 
 Date: 2026-09-14
-Status: draft (brainstormed autonomously; not yet reviewed or implemented)
+Status: implemented 2026-09-14 (plan: docs/superpowers/plans/2026-09-14-find-and-where.md)
 
 ## Problem
 
@@ -265,3 +265,14 @@ quipu where [<w> | --session <id>] [--focus] [--json]
 - Whether `scan` should index by default or behind `--index` on first
   run, given the one-time cost over a 360 MB corpus (estimate before
   deciding; likely a few seconds, in which case default-on).
+
+### Decisions (2026-09-14)
+
+- `find` scope: default is every worktree; `-w <w>` narrows. The redundant `--all-worktrees` flag was dropped.
+- FTS availability is `store.DB.FTS`, set by `Open` from `sqlite_master`; `find` exits 2 when false.
+- `find` shows `last_activity`; the snippet is the best-ranked hit, one line, `[term]` markers.
+- `scan` indexes by default and incrementally; `--reindex` rebuilds and is global (refused together with `--worktree`). Measured: first index of a 374 MB corpus added 2286 messages with no measurable scan-time cost over an incremental rescan.
+- Tasks/events are not yet searchable (follow-up).
+- `ui`: transcript find is `?` and focus-tab is `g`, because `/` and `f` were already bound.
+- `restart`'s tab lookup after spawn is non-fatal; a failed list falls back to the old `in pane N` wording.
+- Verified 2026-09-14 on an 18-tab window that `wezterm cli list` emit order matches the tab bar.
