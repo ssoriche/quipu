@@ -149,9 +149,10 @@ quipu scan [--fetch] [--forge] [--worktree <w>] [--reindex]
     that worktree instead of every worktree in every registered container.
     --reindex drops the full-text index (used by `quipu find`) and rebuilds
     it. Indexing is incremental and on by default: each scan indexes only
-    transcript bytes appended since the last one. Progress prints to
-    stderr as it goes: in place if stderr is a TTY, one summary line per
-    phase otherwise.
+    transcript bytes appended since the last one. --reindex is global (it
+    rebuilds the whole index) and cannot be combined with --worktree.
+    Progress prints to stderr as it goes: in place if stderr is a TTY, one
+    summary line per phase otherwise.
 
 quipu list [--state s] [--container c] [--json]
     Table: NAME STATE DIRTY PURPOSE TASKS LIVE LAST-ACTIVITY, sorted by
