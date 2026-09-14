@@ -3,6 +3,7 @@ package cli
 import (
 	"encoding/json"
 
+	"github.com/ssoriche/quipu/pkg/locate"
 	"github.com/ssoriche/quipu/pkg/store"
 )
 
@@ -71,14 +72,15 @@ func newEventDTO(ev store.Event) eventDTO {
 }
 
 type sessionDTO struct {
-	SessionID    string `json:"sessionId"`
-	JSONLExists  bool   `json:"jsonlExists"`
-	FirstPrompt  string `json:"firstPrompt,omitempty"`
-	AITitle      string `json:"aiTitle,omitempty"`
-	AwaySummary  string `json:"awaySummary,omitempty"`
-	GitBranch    string `json:"gitBranch,omitempty"`
-	LastActivity string `json:"lastActivity,omitempty"`
-	Live         bool   `json:"live"`
+	SessionID    string       `json:"sessionId"`
+	JSONLExists  bool         `json:"jsonlExists"`
+	FirstPrompt  string       `json:"firstPrompt,omitempty"`
+	AITitle      string       `json:"aiTitle,omitempty"`
+	AwaySummary  string       `json:"awaySummary,omitempty"`
+	GitBranch    string       `json:"gitBranch,omitempty"`
+	LastActivity string       `json:"lastActivity,omitempty"`
+	Live         bool         `json:"live"`
+	Location     *locationDTO `json:"location,omitempty"`
 }
 
 func newSessionDTO(s store.Session) sessionDTO {
@@ -139,10 +141,12 @@ type showDTO struct {
 	Events   []eventDTO   `json:"events"`
 }
 
-func newShowDTO(d store.WorktreeDetail) showDTO {
+func newShowDTO(d store.WorktreeDetail, locs []locate.Location) showDTO {
 	out := showDTO{Worktree: newWorktreeDTO(d.Worktree)}
 	for _, s := range d.Sessions {
-		out.Sessions = append(out.Sessions, newSessionDTO(s))
+		dto := newSessionDTO(s)
+		dto.Location = newLocationDTO(locationForSession(locs, s.SessionID))
+		out.Sessions = append(out.Sessions, dto)
 	}
 	for _, t := range d.Tasks {
 		out.Tasks = append(out.Tasks, newTaskDTO(t))
@@ -157,12 +161,25 @@ func newShowDTO(d store.WorktreeDetail) showDTO {
 // table's "!" marker as a machine-readable boolean: a missing worktree that
 // still has open tasks (see design spec, "Deleted worktrees").
 type listRowDTO struct {
-	Name         string `json:"name"`
-	State        string `json:"state"`
-	Dirty        bool   `json:"dirty"`
-	Purpose      string `json:"purpose,omitempty"`
-	OpenTasks    int    `json:"openTasks"`
-	LostWork     bool   `json:"lostWork"`
-	Live         bool   `json:"live"`
-	LastActivity string `json:"lastActivity,omitempty"`
+	Name         string        `json:"name"`
+	State        string        `json:"state"`
+	Dirty        bool          `json:"dirty"`
+	Purpose      string        `json:"purpose,omitempty"`
+	OpenTasks    int           `json:"openTasks"`
+	LostWork     bool          `json:"lostWork"`
+	Live         bool          `json:"live"`
+	LastActivity string        `json:"lastActivity,omitempty"`
+	Locations    []locationDTO `json:"locations,omitempty"`
+}
+
+// newLocationDTOs converts every located session in locs into its DTO,
+// dropping any that aren't actually live (newLocationDTO's nil case).
+func newLocationDTOs(locs []locate.Location) []locationDTO {
+	out := make([]locationDTO, 0, len(locs))
+	for _, l := range locs {
+		if d := newLocationDTO(l, true); d != nil {
+			out = append(out, *d)
+		}
+	}
+	return out
 }

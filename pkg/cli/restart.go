@@ -14,6 +14,9 @@ import (
 type restartActionDTO struct {
 	Worktree  string `json:"worktree"`
 	PaneID    int    `json:"paneId,omitempty"`
+	WindowID  int    `json:"windowId,omitempty"`
+	TabID     int    `json:"tabId,omitempty"`
+	TabIndex  int    `json:"tabIndex,omitempty"`
 	Resumed   bool   `json:"resumed"`
 	SessionID string `json:"sessionId,omitempty"`
 	Skipped   bool   `json:"skipped"`
@@ -23,8 +26,8 @@ type restartActionDTO struct {
 
 func newRestartActionDTO(a restart.Action) restartActionDTO {
 	return restartActionDTO{
-		Worktree: a.WorktreeName, PaneID: a.PaneID, Resumed: a.Resumed,
-		SessionID: a.SessionID, Skipped: a.Skipped, Failed: a.Failed, Reason: a.Reason,
+		Worktree: a.WorktreeName, PaneID: a.PaneID, WindowID: a.WindowID, TabID: a.TabID, TabIndex: a.TabIndex,
+		Resumed: a.Resumed, SessionID: a.SessionID, Skipped: a.Skipped, Failed: a.Failed, Reason: a.Reason,
 	}
 }
 
@@ -148,8 +151,17 @@ func formatRestartAction(a restart.Action) string {
 	case a.Skipped:
 		return fmt.Sprintf("%s: skipped (%s)", a.WorktreeName, a.Reason)
 	case a.Resumed:
-		return fmt.Sprintf("%s: resumed %s in pane %d", a.WorktreeName, a.SessionID, a.PaneID)
+		return fmt.Sprintf("%s: resumed %s in %s", a.WorktreeName, a.SessionID, paneWhere(a))
 	default:
-		return fmt.Sprintf("%s: started a fresh session in pane %d", a.WorktreeName, a.PaneID)
+		return fmt.Sprintf("%s: started a fresh session in %s", a.WorktreeName, paneWhere(a))
 	}
+}
+
+// paneWhere renders "window 0 tab 18 (pane 33)" when the visible tab is
+// known, else the bare "pane 33".
+func paneWhere(a restart.Action) string {
+	if a.TabIndex > 0 {
+		return fmt.Sprintf("window %d tab %d (pane %d)", a.WindowID, a.TabIndex, a.PaneID)
+	}
+	return fmt.Sprintf("pane %d", a.PaneID)
 }

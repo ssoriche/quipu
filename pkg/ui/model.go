@@ -29,6 +29,7 @@ type Row struct {
 	OpenTasks    int
 	LostWork     bool // a missing worktree with open tasks (design spec's lost-work signal)
 	Live         bool
+	Where        string // LIVE cell text: "tab7", "live", or ""
 	LastActivity string
 }
 
@@ -96,7 +97,7 @@ const (
 	nameWidth           = 24
 	stateWidth          = 10
 	dirtyWidth          = 5
-	liveWidth           = 4
+	liveWidth           = 10
 	tasksWidth          = 6
 	lastActivityWidth   = 20
 	defaultPurposeWidth = 30
@@ -527,7 +528,7 @@ func toTableRows(rows []Row) []table.Row {
 			r.Name,
 			styledState(r.State),
 			dirtyMarker(r.Dirty),
-			liveMarker(r.Live),
+			liveCell(r),
 			taskCell(r.OpenTasks, r.LostWork),
 			r.Purpose,
 			r.LastActivity,
@@ -548,6 +549,15 @@ func liveMarker(live bool) string {
 		return "live"
 	}
 	return ""
+}
+
+// liveCell prefers the located tab label(s) the cli layer computed, falling
+// back to the bare "live" marker.
+func liveCell(r Row) string {
+	if r.Where != "" {
+		return r.Where
+	}
+	return liveMarker(r.Live)
 }
 
 // taskCell renders the open-task count, appending "!" for a missing

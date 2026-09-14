@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"github.com/ssoriche/quipu/pkg/locate"
 )
 
 func TestRunListJSONStructure(t *testing.T) {
@@ -121,5 +123,25 @@ func TestRunListMissingWithOpenTasksGetsBangMarker(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("alice.test-feature row not found: %+v", rows)
+	}
+}
+
+func TestFormatLiveCell(t *testing.T) {
+	located := locate.Location{PID: 1, TabIndex: 7, Match: "tty"}
+	located2 := locate.Location{PID: 2, TabIndex: 9, Match: "cwd"}
+	unlocated := locate.Location{PID: 3}
+	cases := []struct {
+		row  listRow
+		want string
+	}{
+		{listRow{live: true, locations: []locate.Location{located, located2}}, "tab7,tab9"},
+		{listRow{live: true, locations: []locate.Location{unlocated}}, "live"},
+		{listRow{live: true}, "live"},
+		{listRow{}, ""},
+	}
+	for _, c := range cases {
+		if got := formatLiveCell(c.row); got != c.want {
+			t.Errorf("formatLiveCell(%+v) = %q, want %q", c.row, got, c.want)
+		}
 	}
 }
