@@ -712,6 +712,56 @@ func TestDeleteWorktree(t *testing.T) {
 	}
 }
 
+func TestDeleteWorktreeDropsSessionText(t *testing.T) {
+	db := openTestDB(t)
+	now := time.Date(2026, 9, 14, 12, 0, 0, 0, time.UTC)
+	mustRegisterContainer(t, db, "/c", "c", now)
+	gone, err := UpsertWorktree(db, WorktreeFacts{ContainerPath: "/c", Name: "gone", Path: "/c/gone", State: "active"}, now)
+	if err != nil {
+		t.Fatalf("UpsertWorktree gone: %v", err)
+	}
+	kept, err := UpsertWorktree(db, WorktreeFacts{ContainerPath: "/c", Name: "kept", Path: "/c/kept", State: "active"}, now)
+	if err != nil {
+		t.Fatalf("UpsertWorktree kept: %v", err)
+	}
+	for _, s := range []SessionScan{
+		{SessionID: "s-gone", WorktreeID: gone.ID, ProjectDir: "/pd", JSONLExists: true},
+		{SessionID: "s-kept", WorktreeID: kept.ID, ProjectDir: "/pd", JSONLExists: true},
+	} {
+		if err := UpsertSessionScan(db, s, now); err != nil {
+			t.Fatalf("UpsertSessionScan %s: %v", s.SessionID, err)
+		}
+	}
+	if err := AppendSessionText(db, "s-gone", []SessionText{
+		{SessionID: "s-gone", Role: "user", TS: "t1", Body: "will be deleted"},
+	}, 100); err != nil {
+		t.Fatalf("AppendSessionText s-gone: %v", err)
+	}
+	if err := AppendSessionText(db, "s-kept", []SessionText{
+		{SessionID: "s-kept", Role: "user", TS: "t1", Body: "must survive"},
+	}, 100); err != nil {
+		t.Fatalf("AppendSessionText s-kept: %v", err)
+	}
+
+	if err := DeleteWorktree(db, gone.ID); err != nil {
+		t.Fatalf("DeleteWorktree: %v", err)
+	}
+
+	var n int
+	if err := db.QueryRow(`SELECT count(*) FROM session_text WHERE session_id=?`, "s-gone").Scan(&n); err != nil {
+		t.Fatalf("count session_text s-gone: %v", err)
+	}
+	if n != 0 {
+		t.Fatalf("expected s-gone's session_text rows deleted, got %d", n)
+	}
+	if err := db.QueryRow(`SELECT count(*) FROM session_text WHERE session_id=?`, "s-kept").Scan(&n); err != nil {
+		t.Fatalf("count session_text s-kept: %v", err)
+	}
+	if n != 1 {
+		t.Fatalf("expected s-kept's session_text row to survive, got %d", n)
+	}
+}
+
 func TestListWorktreesAndOpenTaskCounts(t *testing.T) {
 	db := openTestDB(t)
 	now := time.Date(2026, 8, 27, 12, 0, 0, 0, time.UTC)
@@ -920,9 +970,11 @@ func TestSearchSessionsFilters(t *testing.T) {
 func TestSearchSessionsBadQuery(t *testing.T) {
 	db := openTestDB(t)
 	seedSearchFixture(t, db)
-	_, err := SearchSessions(db, SearchQuery{Query: `batch AND (`})
-	if !errors.Is(err, ErrBadQuery) {
-		t.Fatalf("err = %v, want ErrBadQuery", err)
+	for _, q := range []string{`batch AND (`, `error: timeout`, `"unterminated`} {
+		_, err := SearchSessions(db, SearchQuery{Query: q})
+		if !errors.Is(err, ErrBadQuery) {
+			t.Fatalf("query %q: err = %v, want ErrBadQuery", q, err)
+		}
 	}
 }
 
