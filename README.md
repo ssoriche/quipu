@@ -368,7 +368,9 @@ real registered container:
 1. `quipu ui` opens and shows a populated table (NAME STATE DIRTY LIVE
    TASKS PURPOSE LAST ACTIVITY) with state colours (active green,
    merged/gone/pr-closed dim, stale yellow, error/missing red) and `*` on
-   dirty rows.
+   dirty rows. LIVE shows `tab7` (the located WezTerm tab index) for a
+   located live session, or the bare `live` marker when it's running but
+   unlocated.
 2. `↑`/`↓` move the selection; the highlighted row is visually obvious.
 3. `enter` opens the detail pane (purpose, latest away-summary, the exact
    resume command, open tasks, recent events); `esc` returns to the table.
@@ -382,3 +384,10 @@ real registered container:
    worktree and reports each one; `n`/`esc` cancels with no side effects.
 8. `s` shows a spinner while rescanning and refreshes the table afterward.
 9. `q` quits cleanly from both the table and the detail pane.
+10. `?` opens the find prompt; typing a query and `enter` narrows the table
+    to worktrees whose transcripts match, with the hit count in the status
+    line; `enter` on a row then shows the matching snippets under "find
+    hits:"; `esc` from the table clears the find.
+11. `g` on a row with exactly one located live session activates its
+    WezTerm tab; on zero or two it reports the count in the status line
+    instead.

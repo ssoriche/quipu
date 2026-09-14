@@ -33,6 +33,14 @@ type Row struct {
 	LastActivity string
 }
 
+// FindHit is one transcript search hit as the dashboard shows it.
+type FindHit struct {
+	Worktree  string // worktree name (the row it filters to)
+	SessionID string
+	Snippet   string
+	Hits      int
+}
+
 // Deps are the dashboard's dependencies: every one of them is a thin
 // closure the cli layer wires to a real pkg function (pkg/scan, pkg/restart,
 // pkg/store) — never a package this one imports and calls directly. That
@@ -53,6 +61,12 @@ type Deps struct {
 	// RestartAll restarts every eligible worktree, returning a
 	// human-readable status line summarizing what happened.
 	RestartAll func(ctx context.Context) (string, error)
+	// Find runs a transcript full-text search (`quipu find`), one hit per
+	// matching session.
+	Find func(ctx context.Context, query string) ([]FindHit, error)
+	// Focus activates the WezTerm tab of the named worktree's single live
+	// session (`quipu where --focus`), returning a status line.
+	Focus func(ctx context.Context, name string) (string, error)
 }
 
 // Model is the dashboard's bubbletea model.
@@ -69,6 +83,10 @@ type Model struct {
 	stateFilter string // "" means "all"
 	filterQuery string
 	filtering   bool // "/" mode: further key presses edit filterQuery
+
+	finding   bool // "?" mode: further key presses edit findQuery
+	findQuery string
+	findHits  []FindHit // nil when no find is active; filters rows to their worktrees
 
 	confirmRestartAll bool // "R" mode: awaiting y/n
 
@@ -184,6 +202,20 @@ type restartAllDoneMsg struct {
 	err    error
 }
 
+// findDoneMsg carries the result of a Find call.
+type findDoneMsg struct {
+	query string
+	hits  []FindHit
+	err   error
+}
+
+// focusDoneMsg carries the result of a Focus call.
+type focusDoneMsg struct {
+	name   string
+	status string
+	err    error
+}
+
 func (m Model) loadRowsCmd() tea.Cmd {
 	return func() tea.Msg {
 		rows, err := m.deps.LoadRows(m.ctx)
@@ -219,6 +251,20 @@ func (m Model) restartAllCmd() tea.Cmd {
 	}
 }
 
+func (m Model) findCmd(query string) tea.Cmd {
+	return func() tea.Msg {
+		hits, err := m.deps.Find(m.ctx, query)
+		return findDoneMsg{query: query, hits: hits, err: err}
+	}
+}
+
+func (m Model) focusCmd(name string) tea.Cmd {
+	return func() tea.Msg {
+		status, err := m.deps.Focus(m.ctx, name)
+		return focusDoneMsg{name: name, status: status, err: err}
+	}
+}
+
 // Update handles every message the dashboard receives. It has no business
 // logic of its own: it only tracks UI state (which row is selected, which
 // filter is active, whether the detail pane is open) and delegates every
@@ -235,6 +281,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleRestartDone(msg)
 	case restartAllDoneMsg:
 		return m.handleRestartAllDone(msg)
+	case findDoneMsg:
+		return m.handleFindDone(msg)
+	case focusDoneMsg:
+		return m.handleFocusDone(msg)
 	case spinner.TickMsg:
 		return m.handleSpinnerTick(msg)
 	case tea.KeyMsg:
@@ -318,6 +368,32 @@ func (m Model) handleRestartAllDone(msg restartAllDoneMsg) (Model, tea.Cmd) {
 	return m, m.loadRowsCmd()
 }
 
+func (m Model) handleFindDone(msg findDoneMsg) (Model, tea.Cmd) {
+	if msg.err != nil {
+		m.err = msg.err
+		m.status = fmt.Sprintf("find failed: %v", msg.err)
+		return m, nil
+	}
+	m.err = nil
+	if msg.hits == nil {
+		msg.hits = []FindHit{} // non-nil: "a find is active with zero hits"
+	}
+	m.findHits = msg.hits
+	m.status = fmt.Sprintf("%d session(s) match %q — esc clears", len(msg.hits), msg.query)
+	return m.applyFilters(), nil
+}
+
+func (m Model) handleFocusDone(msg focusDoneMsg) (Model, tea.Cmd) {
+	if msg.err != nil {
+		m.err = msg.err
+		m.status = fmt.Sprintf("focus %s failed: %v", msg.name, msg.err)
+		return m, nil
+	}
+	m.err = nil
+	m.status = msg.status
+	return m, nil
+}
+
 func (m Model) handleSpinnerTick(msg spinner.TickMsg) (Model, tea.Cmd) {
 	if !m.scanning {
 		return m, nil
@@ -332,6 +408,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		return m, tea.Quit
 	}
 	switch {
+	case m.finding:
+		return m.handleFindKey(msg)
 	case m.filtering:
 		return m.handleFilterKey(msg)
 	case m.confirmRestartAll:
@@ -363,6 +441,34 @@ func (m Model) handleFilterKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 	case tea.KeyRunes:
 		m.filterQuery += string(msg.Runes)
 		return m.applyFilters(), nil
+	}
+	return m, nil
+}
+
+// handleFindKey implements "?" mode: typing edits the transcript query,
+// enter runs it (leaving the mode; results filter the table until esc),
+// esc abandons the prompt.
+func (m Model) handleFindKey(msg tea.KeyMsg) (Model, tea.Cmd) {
+	switch msg.Type {
+	case tea.KeyEsc:
+		m.finding = false
+		m.findQuery = ""
+		return m, nil
+	case tea.KeyEnter:
+		m.finding = false
+		if strings.TrimSpace(m.findQuery) == "" {
+			return m, nil
+		}
+		m.status = fmt.Sprintf("finding %q…", m.findQuery)
+		return m, m.findCmd(m.findQuery)
+	case tea.KeyBackspace:
+		if r := []rune(m.findQuery); len(r) > 0 {
+			m.findQuery = string(r[:len(r)-1])
+		}
+		return m, nil
+	case tea.KeyRunes:
+		m.findQuery += string(msg.Runes)
+		return m, nil
 	}
 	return m, nil
 }
@@ -436,6 +542,24 @@ func (m Model) handleListKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		m.filtering = true
 		m.filterQuery = ""
 		return m, nil
+	case "?":
+		m.finding = true
+		m.findQuery = ""
+		return m, nil
+	case "g":
+		row, ok := m.selectedRow()
+		if !ok {
+			return m, nil
+		}
+		m.status = fmt.Sprintf("focusing %s…", row.Name)
+		return m, m.focusCmd(row.Name)
+	case "esc":
+		if m.findHits != nil {
+			m.findHits = nil
+			m.status = "find cleared"
+			return m.applyFilters(), nil
+		}
+		return m, nil
 	}
 	return m, nil
 }
@@ -453,7 +577,7 @@ func (m Model) selectedRow() (Row, bool) {
 // applyFilters recomputes m.filtered from m.rows given the current state
 // filter and fuzzy query, and pushes the result into the table widget.
 func (m Model) applyFilters() Model {
-	m.filtered = filterRows(m.rows, m.stateFilter, m.filterQuery)
+	m.filtered = filterRows(m.rows, m.stateFilter, m.filterQuery, findWorktrees(m.findHits))
 	m.table.SetRows(toTableRows(m.filtered))
 	if len(m.filtered) == 0 {
 		m.table.SetCursor(0)
@@ -463,10 +587,24 @@ func (m Model) applyFilters() Model {
 	return m
 }
 
+// findWorktrees is the set of worktree names with a hit, or nil when no
+// find is active (nil and empty differ: empty means "a find matched nothing").
+func findWorktrees(hits []FindHit) map[string]bool {
+	if hits == nil {
+		return nil
+	}
+	names := make(map[string]bool, len(hits))
+	for _, h := range hits {
+		names[h.Worktree] = true
+	}
+	return names
+}
+
 // filterRows narrows rows to those matching stateFilter (exact match, ""
-// meaning every state) and query (case-insensitive substring match against
-// name or purpose, "" meaning every row).
-func filterRows(rows []Row, stateFilter, query string) []Row {
+// meaning every state), query (case-insensitive substring match against
+// name or purpose, "" meaning every row), and names (the set of worktree
+// names a find matched; nil means no find is active).
+func filterRows(rows []Row, stateFilter, query string, names map[string]bool) []Row {
 	q := strings.ToLower(strings.TrimSpace(query))
 	out := make([]Row, 0, len(rows))
 	for _, r := range rows {
@@ -474,6 +612,9 @@ func filterRows(rows []Row, stateFilter, query string) []Row {
 			continue
 		}
 		if q != "" && !strings.Contains(strings.ToLower(r.Name), q) && !strings.Contains(strings.ToLower(r.Purpose), q) {
+			continue
+		}
+		if names != nil && !names[r.Name] {
 			continue
 		}
 		out = append(out, r)
