@@ -148,7 +148,7 @@ func TestParseSince(t *testing.T) {
 			t.Errorf("parseSince(%q) = %q, %v; want %q", in, got, err, want)
 		}
 	}
-	for _, bad := range []string{"", "soon", "-1d", "0h", "3x"} {
+	for _, bad := range []string{"", "soon", "-1d", "0h", "3x", "1dw", "30dd"} {
 		if _, err := parseSince(bad, now); err == nil {
 			t.Errorf("parseSince(%q) = nil error, want error", bad)
 		}

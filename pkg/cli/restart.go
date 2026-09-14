@@ -14,8 +14,8 @@ import (
 type restartActionDTO struct {
 	Worktree  string `json:"worktree"`
 	PaneID    int    `json:"paneId,omitempty"`
-	WindowID  int    `json:"windowId,omitempty"`
-	TabID     int    `json:"tabId,omitempty"`
+	WindowID  int    `json:"windowId"`
+	TabID     int    `json:"tabId"`
 	TabIndex  int    `json:"tabIndex,omitempty"`
 	Resumed   bool   `json:"resumed"`
 	SessionID string `json:"sessionId,omitempty"`

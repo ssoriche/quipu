@@ -188,6 +188,32 @@ func TestRunWhereFocusActivatesTabThenPane(t *testing.T) {
 	}
 }
 
+// TestSingleLocatedDedupesByPane covers two live sessions sharing one
+// wezterm pane (e.g. two Claude processes in the same tty): --focus must
+// still work, so singleLocated counts distinct panes, not located entries.
+func TestSingleLocatedDedupesByPane(t *testing.T) {
+	sharedPane := locate.Location{SessionID: "s1", PID: 1, PaneID: 12, Match: "tty"}
+	sameShared := locate.Location{SessionID: "s2", PID: 2, PaneID: 12, Match: "tty"}
+	other := locate.Location{SessionID: "s3", PID: 3, PaneID: 34, Match: "tty"}
+	unlocated := locate.Location{SessionID: "s4", PID: 4}
+
+	loc, n := singleLocated([]locate.Location{sharedPane, sameShared, unlocated})
+	if n != 1 {
+		t.Fatalf("n = %d, want 1 (two sessions sharing one pane)", n)
+	}
+	if loc.PaneID != 12 {
+		t.Fatalf("loc = %+v, want the shared pane", loc)
+	}
+
+	if _, n := singleLocated([]locate.Location{sharedPane, sameShared, other}); n != 2 {
+		t.Fatalf("n = %d, want 2 distinct panes", n)
+	}
+
+	if _, n := singleLocated([]locate.Location{unlocated}); n != 0 {
+		t.Fatalf("n = %d, want 0", n)
+	}
+}
+
 func TestRunWhereFocusRequiresExactlyOneLocated(t *testing.T) {
 	r := &execx.FakeRunner{Responses: map[string]execx.FakeResponse{}}
 	e, _, stdout, stderr := seedWhereFixture(t, r) // not live at all
