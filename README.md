@@ -158,7 +158,10 @@ quipu list [--state s] [--container c] [--json]
     Table: NAME STATE DIRTY PURPOSE TASKS LIVE LAST-ACTIVITY, sorted by
     lifecycle state (merged, pr-closed, gone, stale, error, detached,
     active, protected, missing) then recency. A missing worktree with open
-    tasks gets "!" after its task count — the lost-work signal.
+    tasks gets "!" after its task count — the lost-work signal. LIVE shows
+    the visible WezTerm tab position(s) of a located live session, e.g.
+    `tab7` or `tab7,tab9` for two sessions, or the bare `live` marker when
+    it's running but can't be tied to a pane.
 
 quipu show <w> [--json]
     One worktree's full detail: sessions, tasks, events.
@@ -338,7 +341,8 @@ prompts and assistant replies only) for `quipu find`;
 — see `docs/superpowers/specs/2026-08-27-quipu-design.md`'s "Data model"
 section for the full schema and the rules governing it (manual purpose is
 sticky; missing worktrees keep their history; `quipu forget` is the only
-way to discard it).
+way to discard it), and `docs/superpowers/specs/2026-09-14-find-and-where-design.md`
+for the v2 additions (`session_text`, `indexed_bytes`).
 
 ## Relationship to reclaude and git.fish
 
