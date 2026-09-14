@@ -135,6 +135,7 @@ func TestFormatLiveCell(t *testing.T) {
 		want string
 	}{
 		{listRow{live: true, locations: []locate.Location{located, located2}}, "tab7,tab9"},
+		{listRow{live: true, locations: []locate.Location{located2, located}}, "tab7,tab9"},
 		{listRow{live: true, locations: []locate.Location{unlocated}}, "live"},
 		{listRow{live: true}, "live"},
 		{listRow{}, ""},

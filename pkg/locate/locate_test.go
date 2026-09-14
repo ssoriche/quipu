@@ -121,6 +121,54 @@ func TestLiveTTYMatchBeatsStaleCWD(t *testing.T) {
 	}
 }
 
+// TestLiveTabTitleFallsBackToPaneTitle covers the common case (most real
+// tabs have no explicit tab_title set): the matched pane's Title stands in
+// for the tab bar text WezTerm actually shows.
+func TestLiveTabTitleFallsBackToPaneTitle(t *testing.T) {
+	db := openLocateTestDB(t)
+	panes := seventeenTabs()
+	panes[6].TabTitle = ""
+	panes[6].Title = "✳ Rebase with origin/main"
+	r := &execx.FakeRunner{Responses: map[string]execx.FakeResponse{
+		"ps -o pid=,tty= -p 99432":       {Stdout: []byte("99432 ttys010\n")},
+		"wezterm cli list --format json": {Stdout: panesJSON(t, panes)},
+	}}
+	rep, err := Live(context.Background(), Deps{DB: db, Runner: r, Live: oneLive()})
+	if err != nil {
+		t.Fatalf("Live: %v", err)
+	}
+	if len(rep.Locations) != 1 {
+		t.Fatalf("Locations = %+v, want exactly one", rep.Locations)
+	}
+	if got := rep.Locations[0].TabTitle; got != "✳ Rebase with origin/main" {
+		t.Fatalf("TabTitle = %q, want fallback to pane title", got)
+	}
+}
+
+// TestLiveExplicitTabTitleWins covers the opposite: a non-empty tab_title
+// (the user explicitly named the tab) must not be overridden by the pane
+// title.
+func TestLiveExplicitTabTitleWins(t *testing.T) {
+	db := openLocateTestDB(t)
+	panes := seventeenTabs()
+	panes[6].TabTitle = "shawns.investigate-spark-do-not-disrupt"
+	panes[6].Title = "some other pane title"
+	r := &execx.FakeRunner{Responses: map[string]execx.FakeResponse{
+		"ps -o pid=,tty= -p 99432":       {Stdout: []byte("99432 ttys010\n")},
+		"wezterm cli list --format json": {Stdout: panesJSON(t, panes)},
+	}}
+	rep, err := Live(context.Background(), Deps{DB: db, Runner: r, Live: oneLive()})
+	if err != nil {
+		t.Fatalf("Live: %v", err)
+	}
+	if len(rep.Locations) != 1 {
+		t.Fatalf("Locations = %+v, want exactly one", rep.Locations)
+	}
+	if got := rep.Locations[0].TabTitle; got != "shawns.investigate-spark-do-not-disrupt" {
+		t.Fatalf("TabTitle = %q, want explicit tab_title to win", got)
+	}
+}
+
 func TestLiveFallsBackToCWDWhenPSFails(t *testing.T) {
 	db := openLocateTestDB(t)
 	r := &execx.FakeRunner{Responses: map[string]execx.FakeResponse{

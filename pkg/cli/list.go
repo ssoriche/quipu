@@ -117,11 +117,18 @@ func formatListRow(r listRow) string {
 }
 
 // formatLiveCell is the LIVE column: "tab7" / "tab7,tab9" (visible tab
-// positions of located live sessions), "live" when live but no pane was
-// located, "" when not live.
+// positions of located live sessions, in on-screen tab order), "live" when
+// live but no pane was located, "" when not live.
 func formatLiveCell(r listRow) string {
+	locs := slices.Clone(r.locations)
+	slices.SortFunc(locs, func(a, b locate.Location) int {
+		if c := a.WindowID - b.WindowID; c != 0 {
+			return c
+		}
+		return a.TabIndex - b.TabIndex
+	})
 	var labels []string
-	for _, loc := range r.locations {
+	for _, loc := range locs {
 		if loc.Located() {
 			labels = append(labels, fmt.Sprintf("tab%d", loc.TabIndex))
 		}
