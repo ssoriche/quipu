@@ -1,11 +1,14 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
+	"github.com/ssoriche/quipu/pkg/execx"
 	"github.com/ssoriche/quipu/pkg/locate"
 	"github.com/ssoriche/quipu/pkg/store"
+	"github.com/ssoriche/quipu/pkg/wezterm"
 )
 
 // exitUnknown is `where`'s exit code for a worktree or session quipu has
@@ -24,6 +27,7 @@ type whereReport struct {
 func runWhere(e env, args []string) int {
 	fs, dbFlag, jsonFlag := newFlagSet("where")
 	sessionFlag := fs.String("session", "", "locate this session id instead of a worktree")
+	focus := fs.Bool("focus", false, "activate the located WezTerm tab and pane (needs exactly one located session)")
 	if err := parseArgs(fs, args); err != nil {
 		return errf(e, 1, "%v", err)
 	}
@@ -59,6 +63,9 @@ func runWhere(e env, args []string) int {
 	}
 
 	report := buildWhereReport(w, sessions, liveLocations(e, db), *sessionFlag)
+	if *focus {
+		return focusReport(e, report)
+	}
 	if *jsonFlag {
 		return writeJSONOut(e, newWhereDTO(report))
 	}
@@ -132,4 +139,43 @@ func newWhereDTO(r whereReport) whereDTO {
 		})
 	}
 	return out
+}
+
+// focusReport implements --focus: exactly one located session is required
+// (two panes would be a guess; zero means nothing to focus); otherwise the
+// candidates are printed as usual and the exit is 1.
+func focusReport(e env, r whereReport) int {
+	loc, n := singleLocated(r.live)
+	if n != 1 {
+		fmt.Fprint(e.stdout, formatWhereReport(r))
+		return errf(e, 1, "--focus needs exactly one located session, found %d", n)
+	}
+	if err := focusLocated(e.ctx, e.runner, loc); err != nil {
+		return errf(e, 2, "%v", err)
+	}
+	fmt.Fprintf(e.stdout, "focused window %d tab %d pane %d (%s)\n", loc.WindowID, loc.TabIndex, loc.PaneID, loc.SessionID)
+	return 0
+}
+
+// singleLocated returns the located entry and how many there were.
+func singleLocated(locs []locate.Location) (locate.Location, int) {
+	var found locate.Location
+	n := 0
+	for _, l := range locs {
+		if l.Located() {
+			found = l
+			n++
+		}
+	}
+	return found, n
+}
+
+// focusLocated activates loc's tab, then its pane (wezterm has no single
+// "focus this pane wherever it is" command).
+func focusLocated(ctx context.Context, r execx.Runner, loc locate.Location) error {
+	term := wezterm.New(r)
+	if err := term.ActivateTab(ctx, loc.TabID); err != nil {
+		return err
+	}
+	return term.ActivatePane(ctx, loc.PaneID)
 }

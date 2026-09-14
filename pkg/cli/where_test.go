@@ -164,3 +164,41 @@ func TestFormatWhere(t *testing.T) {
 func locateLocation(window, tabIndex int, title string, pane, pid int, match string) locate.Location {
 	return locate.Location{WindowID: window, TabIndex: tabIndex, TabTitle: title, PaneID: pane, PID: pid, Match: match}
 }
+
+func TestRunWhereFocusActivatesTabThenPane(t *testing.T) {
+	r := &execx.FakeRunner{Responses: map[string]execx.FakeResponse{
+		psKey():                                  {Stdout: psOut()},
+		"wezterm cli list --format json":         {Stdout: []byte(twoTabs)},
+		"wezterm cli activate-tab --tab-id 8":    {},
+		"wezterm cli activate-pane --pane-id 12": {},
+	}}
+	e, home, stdout, stderr := seedWhereFixture(t, r)
+	writeLiveRegistry(t, home, "sess-new", "/c/feature")
+
+	code := runWhere(e, []string{"feature", "--focus"})
+	if code != 0 {
+		t.Fatalf("exit %d stderr=%s", code, stderr.String())
+	}
+	n := len(r.Calls)
+	if n < 2 || r.Calls[n-2] != "wezterm cli activate-tab --tab-id 8" || r.Calls[n-1] != "wezterm cli activate-pane --pane-id 12" {
+		t.Fatalf("Calls = %v, want activate-tab then activate-pane last", r.Calls)
+	}
+	if !strings.Contains(stdout.String(), "focused") {
+		t.Fatalf("stdout = %q", stdout.String())
+	}
+}
+
+func TestRunWhereFocusRequiresExactlyOneLocated(t *testing.T) {
+	r := &execx.FakeRunner{Responses: map[string]execx.FakeResponse{}}
+	e, _, stdout, stderr := seedWhereFixture(t, r) // not live at all
+	code := runWhere(e, []string{"feature", "--focus"})
+	if code != 1 {
+		t.Fatalf("exit %d, want 1", code)
+	}
+	if !strings.Contains(stderr.String(), "exactly one") || !strings.Contains(stdout.String(), "not live") {
+		t.Fatalf("stderr=%q stdout=%q, want the candidates listed and a clear error", stderr.String(), stdout.String())
+	}
+	if len(r.Calls) != 0 {
+		t.Fatalf("Calls = %v, must not activate anything", r.Calls)
+	}
+}
