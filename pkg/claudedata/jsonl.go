@@ -200,7 +200,7 @@ func Messages(path string, from int64) ([]Message, int64, error) {
 	if err != nil {
 		return nil, from, fmt.Errorf("claudedata: open %s: %w", path, err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	if _, err := f.Seek(from, io.SeekStart); err != nil {
 		return nil, from, fmt.Errorf("claudedata: seek %s to %d: %w", path, from, err)
 	}

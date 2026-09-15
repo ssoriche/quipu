@@ -42,7 +42,7 @@ func runWhere(e env, args []string) int {
 	if err != nil {
 		return errf(e, 2, "%v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	var w store.Worktree
 	var sessions []store.Session
@@ -74,7 +74,7 @@ func runWhere(e env, args []string) int {
 	if *jsonFlag {
 		return writeJSONOut(e, newWhereDTO(report))
 	}
-	fmt.Fprint(e.stdout, formatWhereReport(report))
+	_, _ = fmt.Fprint(e.stdout, formatWhereReport(report))
 	return 0
 }
 
@@ -152,13 +152,13 @@ func newWhereDTO(r whereReport) whereDTO {
 func focusReport(e env, r whereReport) int {
 	loc, n := singleLocated(r.live)
 	if n != 1 {
-		fmt.Fprint(e.stdout, formatWhereReport(r))
+		_, _ = fmt.Fprint(e.stdout, formatWhereReport(r))
 		return errf(e, 1, "--focus needs exactly one located session, found %d", n)
 	}
 	if err := focusLocated(e.ctx, e.runner, loc); err != nil {
 		return errf(e, 2, "%v", err)
 	}
-	fmt.Fprintf(e.stdout, "focused window %d tab %d pane %d (%s)\n", loc.WindowID, loc.TabIndex, loc.PaneID, loc.SessionID)
+	_, _ = fmt.Fprintf(e.stdout, "focused window %d tab %d pane %d (%s)\n", loc.WindowID, loc.TabIndex, loc.PaneID, loc.SessionID)
 	return 0
 }
 

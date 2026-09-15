@@ -27,7 +27,7 @@ func openLocateTestDB(t *testing.T) *store.DB {
 	if err != nil {
 		t.Fatalf("store.Open: %v", err)
 	}
-	t.Cleanup(func() { db.Close() })
+	t.Cleanup(func() { _ = db.Close() })
 	now := time.Date(2026, 9, 14, 12, 0, 0, 0, time.UTC)
 	if err := store.RegisterContainer(db, "/Volumes/zr", "zr", now); err != nil {
 		t.Fatalf("RegisterContainer: %v", err)

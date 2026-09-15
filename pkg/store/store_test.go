@@ -98,13 +98,13 @@ func TestMigrateV1ToV2PreservesRows(t *testing.T) {
 			t.Fatalf("v1 setup %q: %v", stmt[:20], err)
 		}
 	}
-	raw.Close()
+	_ = raw.Close()
 
 	db, err := Open(path)
 	if err != nil {
 		t.Fatalf("Open (migrate): %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	var version int
 	if err := db.QueryRow("PRAGMA user_version").Scan(&version); err != nil || version != 2 {

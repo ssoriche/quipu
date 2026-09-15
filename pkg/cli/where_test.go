@@ -44,7 +44,7 @@ func seedWhereFixture(t *testing.T, r execx.Runner) (env, string, *bytes.Buffer,
 	t.Helper()
 	now := time.Date(2026, 9, 14, 12, 0, 0, 0, time.UTC)
 	e, home, stdout, stderr := restartTestEnv(r, now)
-	t.Cleanup(func() { os.RemoveAll(home) })
+	t.Cleanup(func() { _ = os.RemoveAll(home) })
 	db := openRestartCLITestDB(t, e)
 	if err := store.RegisterContainer(db, "/c", "c", now); err != nil {
 		t.Fatalf("RegisterContainer: %v", err)
@@ -58,7 +58,7 @@ func seedWhereFixture(t *testing.T, r execx.Runner) (env, string, *bytes.Buffer,
 	if err := store.UpsertSessionScan(db, store.SessionScan{SessionID: "sess-new", WorktreeID: w.ID, ProjectDir: "/pd", JSONLExists: true, AITitle: &title}, now); err != nil {
 		t.Fatalf("UpsertSessionScan: %v", err)
 	}
-	db.Close()
+	_ = db.Close()
 	return e, home, stdout, stderr
 }
 
@@ -137,7 +137,7 @@ func TestRunWhereBySessionJSON(t *testing.T) {
 		t.Fatalf("runWhere: exit %d, stderr=%s", code, stderr.String())
 	}
 	var got whereDTO
-	if err := json.Unmarshal([]byte(stdout.String()), &got); err != nil {
+	if err := json.Unmarshal(stdout.Bytes(), &got); err != nil {
 		t.Fatalf("unmarshal: %v\n%s", err, stdout.String())
 	}
 	if got.Worktree.Name != "feature" || len(got.Live) != 1 || got.Live[0].SessionID != "sess-new" {
