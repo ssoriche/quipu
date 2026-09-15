@@ -3,10 +3,12 @@ package cli
 import (
 	"fmt"
 	"slices"
+	"strings"
 	"text/tabwriter"
 	"time"
 
 	"github.com/ssoriche/quipu/pkg/gitx"
+	"github.com/ssoriche/quipu/pkg/locate"
 	"github.com/ssoriche/quipu/pkg/store"
 )
 
@@ -16,14 +18,15 @@ type listRow struct {
 	worktree  store.Worktree
 	openTasks int
 	live      bool
+	locations []locate.Location // live sessions located right now (may be empty even when live)
 }
 
 // buildListRows assembles listRow data (each matching worktree, its open
-// task count, and whether any of its sessions is live), unsorted. It is the
-// single row-assembly implementation shared by `quipu list` and `quipu
-// ui` (via the cli layer's Deps wiring in ui.go), so both surfaces show
-// exactly the same facts.
-func buildListRows(db *store.DB, filter store.WorktreeFilter) ([]listRow, error) {
+// task count, whether any of its sessions is live, and where any live
+// session was located), unsorted. It is the single row-assembly
+// implementation shared by `quipu list` and `quipu ui` (via the cli layer's
+// Deps wiring in ui.go), so both surfaces show exactly the same facts.
+func buildListRows(db *store.DB, filter store.WorktreeFilter, locs []locate.Location) ([]listRow, error) {
 	worktrees, err := store.ListWorktrees(db, filter)
 	if err != nil {
 		return nil, err
@@ -39,14 +42,15 @@ func buildListRows(db *store.DB, filter store.WorktreeFilter) ([]listRow, error)
 		if err != nil {
 			return nil, err
 		}
-		live := false
+		locations := locationsForWorktree(locs, w.ID)
+		live := len(locations) > 0
 		for _, s := range sessions {
 			if s.LivePID != nil {
 				live = true
 				break
 			}
 		}
-		rows = append(rows, listRow{worktree: w, openTasks: n, live: live})
+		rows = append(rows, listRow{worktree: w, openTasks: n, live: live, locations: locations})
 	}
 	return rows, nil
 }
@@ -66,7 +70,7 @@ func runList(e env, args []string) int {
 	}
 	defer func() { _ = db.Close() }()
 
-	rows, err := buildListRows(db, store.WorktreeFilter{State: *stateFlag, Container: *containerFlag})
+	rows, err := buildListRows(db, store.WorktreeFilter{State: *stateFlag, Container: *containerFlag}, liveLocations(e, db))
 	if err != nil {
 		return errf(e, 2, "%v", err)
 	}
@@ -80,6 +84,7 @@ func runList(e env, args []string) int {
 				Purpose: r.worktree.Purpose, OpenTasks: r.openTasks,
 				LostWork: r.worktree.State == "missing" && r.openTasks > 0,
 				Live:     r.live, LastActivity: derefOrEmpty(r.worktree.LastActivity),
+				Locations: newLocationDTOs(r.locations),
 			}
 		}
 		return writeJSONOut(e, out)
@@ -102,16 +107,39 @@ func formatListRow(r listRow) string {
 	if r.worktree.Dirty {
 		dirty = "*"
 	}
-	live := ""
-	if r.live {
-		live = "live"
-	}
+	live := formatLiveCell(r)
 	tasks := fmt.Sprintf("%d", r.openTasks)
 	if r.worktree.State == "missing" && r.openTasks > 0 {
 		tasks += "!"
 	}
 	return fmt.Sprintf("%s\t%s\t%s\t%s\t%s\t%s\t%s",
 		r.worktree.Name, r.worktree.State, dirty, r.worktree.Purpose, tasks, live, derefOrEmpty(r.worktree.LastActivity))
+}
+
+// formatLiveCell is the LIVE column: "tab7" / "tab7,tab9" (visible tab
+// positions of located live sessions, in on-screen tab order), "live" when
+// live but no pane was located, "" when not live.
+func formatLiveCell(r listRow) string {
+	locs := slices.Clone(r.locations)
+	slices.SortFunc(locs, func(a, b locate.Location) int {
+		if c := a.WindowID - b.WindowID; c != 0 {
+			return c
+		}
+		return a.TabIndex - b.TabIndex
+	})
+	var labels []string
+	for _, loc := range locs {
+		if loc.Located() {
+			labels = append(labels, fmt.Sprintf("tab%d", loc.TabIndex))
+		}
+	}
+	if len(labels) > 0 {
+		return strings.Join(labels, ",")
+	}
+	if r.live {
+		return "live"
+	}
+	return ""
 }
 
 // sortListRows orders by git-wlist's state order (see gitx.StateOrder),

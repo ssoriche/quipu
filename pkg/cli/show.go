@@ -32,9 +32,10 @@ func runShow(e env, args []string) int {
 	if err != nil {
 		return errf(e, 2, "%v", err)
 	}
+	locs := liveLocations(e, db)
 
 	if *jsonFlag {
-		return writeJSONOut(e, newShowDTO(detail))
+		return writeJSONOut(e, newShowDTO(detail, locs))
 	}
 
 	_, _ = fmt.Fprintf(e.stdout, "%s  state=%s  branch=%s  dirty=%v\n", detail.Worktree.Name, detail.Worktree.State, detail.Worktree.Branch, detail.Worktree.Dirty)
@@ -44,7 +45,11 @@ func runShow(e env, args []string) int {
 
 	_, _ = fmt.Fprintln(e.stdout, "\nsessions:")
 	for _, s := range detail.Sessions {
-		_, _ = fmt.Fprintf(e.stdout, "  %s  jsonl_exists=%v  %s\n", s.SessionID, s.JSONLExists, derefOrEmpty(s.AITitle))
+		where := ""
+		if loc, ok := locationForSession(locs, s.SessionID); ok {
+			where = "  [" + formatWhere(loc) + "]"
+		}
+		_, _ = fmt.Fprintf(e.stdout, "  %s  jsonl_exists=%v  %s%s\n", s.SessionID, s.JSONLExists, derefOrEmpty(s.AITitle), where)
 	}
 
 	_, _ = fmt.Fprintln(e.stdout, "\ntasks:")

@@ -21,6 +21,8 @@ var commands = []string{
 	"scan",
 	"list",
 	"show",
+	"find",
+	"where",
 	"task",
 	"note",
 	"done",
@@ -41,6 +43,8 @@ var registry = map[string]func(env, []string) int{
 	"scan":     runScanCmd,
 	"list":     runList,
 	"show":     runShow,
+	"find":     runFind,
+	"where":    runWhere,
 	"task":     runTask,
 	"note":     runNote,
 	"done":     runDoneCmd,
@@ -55,10 +59,10 @@ var registry = map[string]func(env, []string) int{
 }
 
 // Run dispatches args[0] as a subcommand and returns the process exit code
-// (0 success, 1 invalid args, 2 git/exec failure per spec). It resolves the
-// process environment (cwd, $HOME, $CLAUDE_CODE_SESSION_ID, the clock)
-// exactly once here, so no command or package below it reads the process
-// environment directly.
+// (0 success, 1 invalid args, 2 git/exec failure per spec, 3 unknown
+// worktree/session for where). It resolves the process environment (cwd,
+// $HOME, $CLAUDE_CODE_SESSION_ID, the clock) exactly once here, so no
+// command or package below it reads the process environment directly.
 func Run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	if len(args) > 0 && (args[0] == "--version" || args[0] == "-v") {
 		_, _ = fmt.Fprintln(stdout, Version)

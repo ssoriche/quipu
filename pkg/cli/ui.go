@@ -2,6 +2,8 @@ package cli
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -32,7 +34,7 @@ func runUI(e env, args []string) int {
 	defer func() { _ = db.Close() }()
 
 	deps := ui.Deps{
-		LoadRows:   func(ctx context.Context) ([]ui.Row, error) { return loadUIRows(db) },
+		LoadRows:   func(ctx context.Context) ([]ui.Row, error) { return loadUIRows(e, db) },
 		LoadDetail: func(ctx context.Context, name string) (*store.WorktreeDetail, error) { return loadUIDetail(db, name) },
 		ScanAll: func(ctx context.Context) error {
 			_, err := scan.Scan(ctx, scan.Deps{DB: db, Runner: e.runner, Home: e.home, Now: e.now}, scan.Options{})
@@ -40,6 +42,8 @@ func runUI(e env, args []string) int {
 		},
 		RestartOne: func(ctx context.Context, name string) (string, error) { return restartUIOne(ctx, e, db, name) },
 		RestartAll: func(ctx context.Context) (string, error) { return restartUIAll(ctx, e, db) },
+		Find:       func(ctx context.Context, query string) ([]ui.FindHit, error) { return findUIHits(db, query) },
+		Focus:      func(ctx context.Context, name string) (string, error) { return focusUIOne(ctx, e, db, name) },
 	}
 
 	p := tea.NewProgram(ui.NewModel(e.ctx, deps), tea.WithAltScreen())
@@ -51,9 +55,12 @@ func runUI(e env, args []string) int {
 
 // loadUIRows assembles every worktree row for the dashboard, using the same
 // row-builder and sort order `quipu list` uses (see list.go), then adapts
-// each listRow into ui.Row.
-func loadUIRows(db *store.DB) ([]ui.Row, error) {
-	rows, err := buildListRows(db, store.WorktreeFilter{})
+// each listRow into ui.Row. Locate warnings can't go to stderr under a TUI
+// (they'd corrupt the alt-screen), so this calls locateLive directly and
+// ignores Warnings: a locate failure just means no tab labels this refresh.
+func loadUIRows(e env, db *store.DB) ([]ui.Row, error) {
+	rep, _ := locateLive(e, db)
+	rows, err := buildListRows(db, store.WorktreeFilter{}, rep.Locations)
 	if err != nil {
 		return nil, err
 	}
@@ -69,6 +76,7 @@ func loadUIRows(db *store.DB) ([]ui.Row, error) {
 			OpenTasks:    r.openTasks,
 			LostWork:     r.worktree.State == "missing" && r.openTasks > 0,
 			Live:         r.live,
+			Where:        formatLiveCell(r),
 			LastActivity: derefOrEmpty(r.worktree.LastActivity),
 		}
 	}
@@ -129,4 +137,42 @@ func restartUIAll(ctx context.Context, e env, db *store.DB) (string, error) {
 		lines[i] = formatRestartAction(a)
 	}
 	return strings.Join(lines, "\n"), nil
+}
+
+// findUIHits runs the same search `quipu find` runs, shaped for the
+// dashboard (50 sessions is plenty for a table filter).
+func findUIHits(db *store.DB, query string) ([]ui.FindHit, error) {
+	if !db.FTS {
+		return nil, errors.New("full-text search unavailable in this build")
+	}
+	hits, err := store.SearchSessions(db, store.SearchQuery{Query: query, Limit: 50})
+	if err != nil {
+		return nil, err
+	}
+	out := make([]ui.FindHit, len(hits))
+	for i, h := range hits {
+		out[i] = ui.FindHit{Worktree: h.WorktreeName, SessionID: h.SessionID, Snippet: oneLine(h.Snippet, 120), Hits: h.Hits}
+	}
+	return out, nil
+}
+
+// focusUIOne is `quipu where <name> --focus` for the dashboard: exactly one
+// located live session, else an error naming the count.
+func focusUIOne(ctx context.Context, e env, db *store.DB, name string) (string, error) {
+	w, err := resolveWorktreeByName(db, name)
+	if err != nil {
+		return "", err
+	}
+	rep, err := locateLive(e, db)
+	if err != nil {
+		return "", err
+	}
+	loc, n := singleLocated(locationsForWorktree(rep.Locations, w.ID))
+	if n != 1 {
+		return "", fmt.Errorf("%s: need exactly one located live session, found %d", name, n)
+	}
+	if err := focusLocated(ctx, e.runner, loc); err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("focused %s: window %d tab %d pane %d", name, loc.WindowID, loc.TabIndex, loc.PaneID), nil
 }

@@ -2,6 +2,7 @@ package store
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -46,6 +47,7 @@ type Session struct {
 	LivePID      *int
 	JSONLSize    *int64
 	JSONLMtime   *string
+	IndexedBytes int64
 	LastScanned  string
 }
 
@@ -587,11 +589,32 @@ func ListSessions(db *DB, worktreeID int64) ([]Session, error) {
 	return listSessions(db, worktreeID)
 }
 
+const sessionSelect = `SELECT session_id, worktree_id, project_dir, jsonl_exists, first_prompt, ai_title,
+	away_summary, git_branch, started_at, last_activity, live_pid, jsonl_size, jsonl_mtime, last_scanned, indexed_bytes
+	FROM sessions`
+
+func scanSessionRow(row rowScanner) (Session, error) {
+	var s Session
+	var jsonlExists int
+	if err := row.Scan(
+		&s.SessionID, &s.WorktreeID, &s.ProjectDir, &jsonlExists, &s.FirstPrompt, &s.AITitle,
+		&s.AwaySummary, &s.GitBranch, &s.StartedAt, &s.LastActivity, &s.LivePID, &s.JSONLSize,
+		&s.JSONLMtime, &s.LastScanned, &s.IndexedBytes,
+	); err != nil {
+		return Session{}, fmt.Errorf("store: scan session row: %w", err)
+	}
+	s.JSONLExists = jsonlExists != 0
+	return s, nil
+}
+
+// GetSession looks up one session by id. The error wraps sql.ErrNoRows when
+// quipu has never seen the session.
+func GetSession(db *DB, sessionID string) (Session, error) {
+	return scanSessionRow(db.QueryRow(sessionSelect+" WHERE session_id=?", sessionID))
+}
+
 func listSessions(db *DB, worktreeID int64) ([]Session, error) {
-	rows, err := db.Query(`
-		SELECT session_id, worktree_id, project_dir, jsonl_exists, first_prompt, ai_title,
-		       away_summary, git_branch, started_at, last_activity, live_pid, jsonl_size, jsonl_mtime, last_scanned
-		FROM sessions WHERE worktree_id=? ORDER BY last_activity DESC`, worktreeID)
+	rows, err := db.Query(sessionSelect+" WHERE worktree_id=? ORDER BY last_activity DESC", worktreeID)
 	if err != nil {
 		return nil, fmt.Errorf("store: list sessions for worktree %d: %w", worktreeID, err)
 	}
@@ -599,16 +622,10 @@ func listSessions(db *DB, worktreeID int64) ([]Session, error) {
 
 	var out []Session
 	for rows.Next() {
-		var s Session
-		var jsonlExists int
-		if err := rows.Scan(
-			&s.SessionID, &s.WorktreeID, &s.ProjectDir, &jsonlExists, &s.FirstPrompt, &s.AITitle,
-			&s.AwaySummary, &s.GitBranch, &s.StartedAt, &s.LastActivity, &s.LivePID, &s.JSONLSize,
-			&s.JSONLMtime, &s.LastScanned,
-		); err != nil {
-			return nil, fmt.Errorf("store: scan session row: %w", err)
+		s, err := scanSessionRow(rows)
+		if err != nil {
+			return nil, err
 		}
-		s.JSONLExists = jsonlExists != 0
 		out = append(out, s)
 	}
 	return out, rows.Err()
@@ -708,12 +725,18 @@ func DeleteWorktree(db *DB, worktreeID int64) error {
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	for _, stmt := range []string{
+	stmts := []string{
 		`DELETE FROM events WHERE worktree_id=?`,
 		`DELETE FROM tasks WHERE worktree_id=?`,
+	}
+	if db.FTS {
+		stmts = append(stmts, `DELETE FROM session_text WHERE session_id IN (SELECT session_id FROM sessions WHERE worktree_id=?)`)
+	}
+	stmts = append(stmts,
 		`DELETE FROM sessions WHERE worktree_id=?`,
 		`DELETE FROM worktrees WHERE id=?`,
-	} {
+	)
+	for _, stmt := range stmts {
 		if _, err := tx.Exec(stmt, worktreeID); err != nil {
 			return fmt.Errorf("store: delete worktree %d (%s): %w", worktreeID, stmt, err)
 		}
@@ -737,4 +760,199 @@ func OpenTaskCounts(db *DB, worktreeID int64) (int, error) {
 		return 0, fmt.Errorf("store: open task counts for worktree %d: %w", worktreeID, err)
 	}
 	return n, nil
+}
+
+// ErrBadQuery wraps an FTS5 syntax error in a user-supplied query.
+var ErrBadQuery = errors.New("store: invalid full-text query")
+
+// isFTSQueryError reports whether err looks like FTS5 rejecting a
+// user-supplied MATCH expression as invalid syntax, rather than some other
+// database failure. FTS5 doesn't always prefix these with "fts5:" — a bare
+// column-name token (e.g. "error:") or an unterminated quote surfaces as a
+// generic SQLite parse error instead.
+func isFTSQueryError(err error) bool {
+	msg := err.Error()
+	for _, marker := range []string{"fts5:", "no such column", "unterminated string"} {
+		if strings.Contains(msg, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+// SessionText is one indexed transcript message.
+type SessionText struct {
+	SessionID string
+	Role      string // "user" | "assistant"
+	TS        string // RFC3339 as recorded in the transcript, "" if absent
+	Body      string
+}
+
+// AppendSessionText inserts msgs into the full-text index and advances the
+// session's indexed_bytes marker to indexedBytes, atomically: a crash
+// between the two would otherwise re-index (duplicates) or skip (holes) on
+// the next scan.
+func AppendSessionText(db *DB, sessionID string, msgs []SessionText, indexedBytes int64) error {
+	if !db.FTS {
+		return ErrFTSUnavailable
+	}
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("store: begin index %s: %w", sessionID, err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	stmt, err := tx.Prepare(`INSERT INTO session_text(session_id, role, ts, body) VALUES(?, ?, ?, ?)`)
+	if err != nil {
+		return fmt.Errorf("store: prepare index insert: %w", err)
+	}
+	defer func() { _ = stmt.Close() }()
+	for _, m := range msgs {
+		if _, err := stmt.Exec(sessionID, m.Role, m.TS, m.Body); err != nil {
+			return fmt.Errorf("store: index message for %s: %w", sessionID, err)
+		}
+	}
+	if _, err := tx.Exec(`UPDATE sessions SET indexed_bytes=? WHERE session_id=?`, indexedBytes, sessionID); err != nil {
+		return fmt.Errorf("store: advance indexed_bytes for %s: %w", sessionID, err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("store: commit index %s: %w", sessionID, err)
+	}
+	return nil
+}
+
+// ResetSessionText drops a session's indexed text and marker, for a
+// transcript that shrank (rewritten) or vanished.
+func ResetSessionText(db *DB, sessionID string) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("store: begin reset index %s: %w", sessionID, err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if db.FTS {
+		if _, err := tx.Exec(`DELETE FROM session_text WHERE session_id=?`, sessionID); err != nil {
+			return fmt.Errorf("store: delete index rows for %s: %w", sessionID, err)
+		}
+	}
+	if _, err := tx.Exec(`UPDATE sessions SET indexed_bytes=0 WHERE session_id=?`, sessionID); err != nil {
+		return fmt.Errorf("store: reset indexed_bytes for %s: %w", sessionID, err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("store: commit reset index %s: %w", sessionID, err)
+	}
+	return nil
+}
+
+// ResetAllSessionText empties the full-text index and every marker, so the
+// next scan rebuilds from scratch (`quipu scan --reindex`).
+func ResetAllSessionText(db *DB) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("store: begin reindex: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if db.FTS {
+		if _, err := tx.Exec(`DELETE FROM session_text`); err != nil {
+			return fmt.Errorf("store: clear index: %w", err)
+		}
+	}
+	if _, err := tx.Exec(`UPDATE sessions SET indexed_bytes=0`); err != nil {
+		return fmt.Errorf("store: reset all indexed_bytes: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("store: commit reindex: %w", err)
+	}
+	return nil
+}
+
+// SearchQuery narrows SearchSessions.
+type SearchQuery struct {
+	Query      string // FTS5 MATCH expression, verbatim ("batch 2", linkerd NEAR flow, spark*)
+	Limit      int    // sessions to return; <= 0 means 20
+	Since      string // RFC3339 lower bound on sessions.last_activity; "" means unbounded
+	WorktreeID int64  // restrict to one worktree; 0 means every worktree
+}
+
+// SearchHit is one session that matched, with its best message's snippet.
+type SearchHit struct {
+	SessionID    string
+	WorktreeID   int64
+	WorktreeName string
+	WorktreePath string
+	Branch       string
+	State        string
+	AITitle      string
+	FirstPrompt  string
+	LastActivity string
+	Hits         int     // matching messages in this session
+	Score        float64 // bm25 of the best message; lower is better
+	Snippet      string  // FTS5 snippet of the best message, matches wrapped in [ ]
+}
+
+// searchSQL ranks every matching message with bm25, keeps the best per
+// session (ROW_NUMBER over the session partition) alongside the session's
+// hit count, then joins session and worktree facts. bm25 and snippet are
+// FTS5 auxiliary functions and must be evaluated in the innermost query
+// against the virtual table, hence the two-level CTE.
+const searchSQL = `
+WITH scored AS (
+    SELECT session_id, bm25(session_text) AS score,
+           snippet(session_text, 3, '[', ']', '…', 16) AS snip
+    FROM session_text WHERE session_text MATCH ?
+), ranked AS (
+    SELECT session_id, score, snip,
+           ROW_NUMBER() OVER (PARTITION BY session_id ORDER BY score) AS rn,
+           COUNT(*) OVER (PARTITION BY session_id) AS n
+    FROM scored
+)
+SELECT h.session_id, s.worktree_id, w.name, w.path, COALESCE(w.branch,''), w.state,
+       COALESCE(s.ai_title,''), COALESCE(s.first_prompt,''), COALESCE(s.last_activity,''),
+       h.n, h.score, h.snip
+FROM ranked h
+JOIN sessions s ON s.session_id = h.session_id
+JOIN worktrees w ON w.id = s.worktree_id
+WHERE h.rn = 1
+  AND (? = 0 OR s.worktree_id = ?)
+  AND (? = '' OR s.last_activity >= ?)
+ORDER BY h.score, s.last_activity DESC
+LIMIT ?`
+
+// SearchSessions runs a full-text query over indexed transcript text,
+// returning at most Limit sessions ordered best-match first. An FTS5
+// syntax error in Query is reported as ErrBadQuery.
+func SearchSessions(db *DB, q SearchQuery) ([]SearchHit, error) {
+	if !db.FTS {
+		return nil, ErrFTSUnavailable
+	}
+	limit := q.Limit
+	if limit <= 0 {
+		limit = 20
+	}
+	rows, err := db.Query(searchSQL, q.Query, q.WorktreeID, q.WorktreeID, q.Since, q.Since, limit)
+	if err != nil {
+		if isFTSQueryError(err) {
+			return nil, fmt.Errorf("%w: %v", ErrBadQuery, err)
+		}
+		return nil, fmt.Errorf("store: search %q: %w", q.Query, err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var out []SearchHit
+	for rows.Next() {
+		var h SearchHit
+		if err := rows.Scan(
+			&h.SessionID, &h.WorktreeID, &h.WorktreeName, &h.WorktreePath, &h.Branch, &h.State,
+			&h.AITitle, &h.FirstPrompt, &h.LastActivity, &h.Hits, &h.Score, &h.Snippet,
+		); err != nil {
+			return nil, fmt.Errorf("store: scan search row: %w", err)
+		}
+		out = append(out, h)
+	}
+	if err := rows.Err(); err != nil {
+		if isFTSQueryError(err) {
+			return nil, fmt.Errorf("%w: %v", ErrBadQuery, err)
+		}
+		return nil, fmt.Errorf("store: search %q: %w", q.Query, err)
+	}
+	return out, nil
 }

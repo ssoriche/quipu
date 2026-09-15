@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 )
 
 func mustParseRFC3339(t *testing.T, s string) time.Time {
@@ -145,5 +146,112 @@ func TestScanSessionOversizedLineIsSkippedButFollowingLineIsProcessed(t *testing
 	wantLast := mustParseRFC3339(t, "2026-01-01T00:00:02Z")
 	if !facts.LastActivity.Equal(wantLast) {
 		t.Fatalf("LastActivity = %v, want %v (oversized line's timestamp must not count)", facts.LastActivity, wantLast)
+	}
+}
+
+func TestMessagesFixture(t *testing.T) {
+	path := filepath.Join("testdata", "messages.jsonl")
+	msgs, next, err := Messages(path, 0)
+	if err != nil {
+		t.Fatalf("Messages: %v", err)
+	}
+	info, _ := os.Stat(path)
+	if next != info.Size() {
+		t.Fatalf("next = %d, want file size %d (every line is complete)", next, info.Size())
+	}
+	want := []Message{
+		{Role: "user", Timestamp: "2026-09-14T10:00:01Z", Body: "where did we discuss spark separation batch 2?"},
+		{Role: "user", Timestamp: "2026-09-14T10:00:03Z", Body: "array prompt part one\npart two"},
+		{Role: "assistant", Timestamp: "2026-09-14T10:00:04Z", Body: "Batch 2 was in the spark session."},
+	}
+	if len(msgs) != len(want) {
+		t.Fatalf("msgs = %+v, want %+v", msgs, want)
+	}
+	for i := range want {
+		if msgs[i] != want[i] {
+			t.Errorf("msgs[%d] = %+v, want %+v", i, msgs[i], want[i])
+		}
+	}
+}
+
+// TestMessagesIncrementalStopsBeforePartialLine: the offset only advances
+// past newline-terminated lines, so a transcript mid-write is picked up
+// whole on the next call rather than half-indexed.
+func TestMessagesIncrementalStopsBeforePartialLine(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "inc.jsonl")
+	line1 := `{"type":"user","timestamp":"2026-09-14T10:00:01Z","message":{"role":"user","content":"first"}}` + "\n"
+	line2 := `{"type":"assistant","timestamp":"2026-09-14T10:00:02Z","message":{"role":"assistant","content":[{"type":"text","text":"second"}]}}` + "\n"
+	partial := `{"type":"user","timestamp":"2026-09-14T10:00:03Z","message":{"role":"user","content":"thi`
+	if err := os.WriteFile(path, []byte(line1), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	msgs, off1, err := Messages(path, 0)
+	if err != nil || len(msgs) != 1 || msgs[0].Body != "first" || off1 != int64(len(line1)) {
+		t.Fatalf("pass 1: msgs=%+v off=%d err=%v", msgs, off1, err)
+	}
+
+	f, _ := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o644)
+	_, _ = f.WriteString(line2 + partial)
+	_ = f.Close()
+	msgs, off2, err := Messages(path, off1)
+	if err != nil || len(msgs) != 1 || msgs[0].Body != "second" {
+		t.Fatalf("pass 2: msgs=%+v err=%v (must see only the new complete line)", msgs, err)
+	}
+	if off2 != off1+int64(len(line2)) {
+		t.Fatalf("pass 2: off=%d, want %d (partial line must not be consumed)", off2, off1+int64(len(line2)))
+	}
+
+	f, _ = os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o644)
+	_, _ = f.WriteString(`rd"}}` + "\n")
+	_ = f.Close()
+	msgs, off3, err := Messages(path, off2)
+	if err != nil || len(msgs) != 1 || msgs[0].Body != "third" {
+		t.Fatalf("pass 3: msgs=%+v err=%v", msgs, err)
+	}
+	info, _ := os.Stat(path)
+	if off3 != info.Size() {
+		t.Fatalf("pass 3: off=%d, want %d", off3, info.Size())
+	}
+}
+
+func TestMessagesSkipsOversizedLineButAdvancesPastIt(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "big.jsonl")
+	var sb strings.Builder
+	sb.WriteString(`{"type":"user","timestamp":"2026-09-14T10:00:01Z","message":{"role":"user","content":"`)
+	sb.WriteString(strings.Repeat("x", 11*1024*1024))
+	sb.WriteString("\"}}\n")
+	sb.WriteString(`{"type":"user","timestamp":"2026-09-14T10:00:02Z","message":{"role":"user","content":"after"}}` + "\n")
+	if err := os.WriteFile(path, []byte(sb.String()), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	msgs, next, err := Messages(path, 0)
+	if err != nil || len(msgs) != 1 || msgs[0].Body != "after" || next != int64(sb.Len()) {
+		t.Fatalf("msgs=%+v next=%d err=%v", msgs, next, err)
+	}
+}
+
+func TestMessagesTruncatesBodyRuneSafe(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "long.jsonl")
+	body := strings.Repeat("あ", 4000) // 12000 bytes > MaxMessageBytes
+	line := `{"type":"user","message":{"role":"user","content":"` + body + `"}}` + "\n"
+	if err := os.WriteFile(path, []byte(line), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	msgs, _, err := Messages(path, 0)
+	if err != nil || len(msgs) != 1 {
+		t.Fatalf("msgs=%+v err=%v", msgs, err)
+	}
+	got := msgs[0].Body
+	if len(got) > MaxMessageBytes || len(got) < MaxMessageBytes-3 || !utf8.ValidString(got) {
+		t.Fatalf("len=%d valid=%v, want ≤ %d bytes, whole runes", len(got), utf8.ValidString(got), MaxMessageBytes)
+	}
+	if msgs[0].Timestamp != "" {
+		t.Fatalf("Timestamp = %q, want empty when absent", msgs[0].Timestamp)
+	}
+}
+
+func TestMessagesMissingFile(t *testing.T) {
+	if _, _, err := Messages(filepath.Join("testdata", "nope.jsonl"), 0); err == nil {
+		t.Fatal("want error for missing file")
 	}
 }

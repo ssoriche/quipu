@@ -45,6 +45,9 @@ type Options struct {
 type Action struct {
 	WorktreeName string // the worktree this action is about
 	PaneID       int    // the pane spawned into (zero when Skipped or Failed)
+	WindowID     int    // wezterm window the pane landed in (0 if unknown)
+	TabID        int    // wezterm internal tab id (0 if unknown)
+	TabIndex     int    // 1-based VISIBLE tab position in WindowID (0 if unknown)
 	Resumed      bool   // true when SessionID was resumed rather than started fresh
 	SessionID    string // set only when Resumed
 	Skipped      bool   // a deliberate no-op (the live-session guard); Reason explains why
@@ -103,6 +106,7 @@ func Restart(ctx context.Context, d Deps, w store.Worktree, opts Options) (Actio
 		return Action{}, fmt.Errorf("restart: send text for %s: %w", w.Name, err)
 	}
 
+	action.WindowID, action.TabID, action.TabIndex = tabPosition(ctx, d.Term, paneID)
 	action.PaneID = paneID
 	action.Resumed = resumable
 	if resumable {
@@ -174,6 +178,24 @@ func spawn(ctx context.Context, d Deps, w store.Worktree, opts Options) (int, er
 		return d.Term.SpawnWindow(ctx, w.Path)
 	}
 	return d.Term.SpawnTab(ctx, panes[0].WindowID, w.Path)
+}
+
+// tabPosition reports the window, tab id, and 1-based visible tab index of
+// paneID by listing panes once more after the spawn. It is a reporting
+// nicety: a failure here (wezterm gone between spawn and list) yields zeros
+// and must never fail a restart that has already succeeded.
+func tabPosition(ctx context.Context, term *wezterm.Client, paneID int) (windowID, tabID, tabIndex int) {
+	panes, err := term.List(ctx)
+	if err != nil {
+		return 0, 0, 0
+	}
+	index, _ := wezterm.TabIndexes(panes)
+	for _, p := range panes {
+		if p.PaneID == paneID {
+			return p.WindowID, p.TabID, index[p.TabID]
+		}
+	}
+	return 0, 0, 0
 }
 
 // RestartAll restarts every worktree in states (DefaultStates if empty)

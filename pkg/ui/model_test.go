@@ -3,6 +3,7 @@ package ui
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -18,6 +19,10 @@ type recorder struct {
 	restartAllCalls int
 	scanCalls       int
 	loadDetailCalls []string
+
+	findHits  []FindHit // returned by Find
+	findQuery string    // last query Find was called with
+	focusName string    // last name Focus was called with
 }
 
 func fakeDeps(rec *recorder) Deps {
@@ -38,6 +43,14 @@ func fakeDeps(rec *recorder) Deps {
 		RestartAll: func(context.Context) (string, error) {
 			rec.restartAllCalls++
 			return "restarted all", nil
+		},
+		Find: func(_ context.Context, query string) ([]FindHit, error) {
+			rec.findQuery = query
+			return rec.findHits, nil
+		},
+		Focus: func(_ context.Context, name string) (string, error) {
+			rec.focusName = name
+			return "focused " + name, nil
 		},
 	}
 }
@@ -446,5 +459,76 @@ func TestFilterNarrowingToZeroRowsDoesNotPanic(t *testing.T) {
 	m = nm.(Model)
 	if cmd != nil {
 		t.Fatalf("expected 'r' with no selection to be a no-op, got a command")
+	}
+}
+
+func TestQuestionMarkFindFiltersRowsToHits(t *testing.T) {
+	rec := &recorder{findHits: []FindHit{{Worktree: "beta", SessionID: "s-b", Snippet: "the [batch] two talk", Hits: 3}}}
+	m := withRows(t, NewModel(context.Background(), fakeDeps(rec)), sampleRows())
+
+	nm, _ := m.Update(keyRunes("?"))
+	m = nm.(Model)
+	if !m.finding {
+		t.Fatalf("? should enter find mode")
+	}
+	for _, r := range "batch" {
+		nm, _ = m.Update(keyRunes(string(r)))
+		m = nm.(Model)
+	}
+	nm, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = nm.(Model)
+	if cmd == nil {
+		t.Fatalf("enter must run the find command")
+	}
+	for _, msg := range runCmd(t, cmd) {
+		nm, _ = m.Update(msg)
+		m = nm.(Model)
+	}
+	if rec.findQuery != "batch" {
+		t.Fatalf("Find called with %q, want batch", rec.findQuery)
+	}
+	if len(m.filtered) != 1 || m.filtered[0].Name != "beta" {
+		t.Fatalf("filtered = %+v, want only beta", m.filtered)
+	}
+	if !strings.Contains(m.statusLine(), "1 session") {
+		t.Fatalf("status = %q, want a hit summary", m.statusLine())
+	}
+
+	nm, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = nm.(Model)
+	if len(m.filtered) != len(sampleRows()) || m.findHits != nil {
+		t.Fatalf("esc must clear find results: filtered=%d hits=%v", len(m.filtered), m.findHits)
+	}
+}
+
+func TestDetailViewShowsFindSnippets(t *testing.T) {
+	rec := &recorder{}
+	m := withRows(t, NewModel(context.Background(), fakeDeps(rec)), sampleRows())
+	m.findHits = []FindHit{{Worktree: "alpha", SessionID: "s-a", Snippet: "spark [batch] 2", Hits: 2}}
+	m.detailName = "alpha"
+	m.detail = &store.WorktreeDetail{Worktree: store.Worktree{Name: "alpha", State: "active"}}
+	view := m.View()
+	if !strings.Contains(view, "find hits") || !strings.Contains(view, "spark [batch] 2") || !strings.Contains(view, "s-a") {
+		t.Fatalf("detail view missing snippets:\n%s", view)
+	}
+}
+
+func TestKeyGFocusesSelectedRow(t *testing.T) {
+	rec := &recorder{}
+	m := withRows(t, NewModel(context.Background(), fakeDeps(rec)), sampleRows())
+	nm, cmd := m.Update(keyRunes("g"))
+	m = nm.(Model)
+	if cmd == nil {
+		t.Fatalf("g must dispatch Focus")
+	}
+	for _, msg := range runCmd(t, cmd) {
+		nm, _ = m.Update(msg)
+		m = nm.(Model)
+	}
+	if rec.focusName != sampleRows()[0].Name {
+		t.Fatalf("Focus called with %q, want %q", rec.focusName, sampleRows()[0].Name)
+	}
+	if !strings.Contains(m.status, "focused") {
+		t.Fatalf("status = %q", m.status)
 	}
 }

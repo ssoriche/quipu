@@ -41,6 +41,7 @@ type Options struct {
 	Worktree  string      // scan only the worktree matching this path or name; empty = every worktree
 	Fetch     bool        // run `git fetch --prune origin` first
 	Forge     bool        // enable the `gh pr view` pr-closed check
+	Reindex   bool        // global: drop the full-text index and every indexed_bytes marker for every session, regardless of Container/Worktree narrowing — callers must not combine it with a narrowed scan
 	Progress  func(Event) // optional progress observer; nil = no observer, zero overhead
 }
 
@@ -78,6 +79,7 @@ type Summary struct {
 	Worktrees     int      `json:"worktrees"`
 	Sessions      int      `json:"sessions"`
 	TasksImported int      `json:"tasksImported"`
+	Indexed       int      `json:"indexed"`
 	Warnings      []string `json:"warnings,omitempty"`
 }
 
@@ -94,6 +96,12 @@ func Scan(ctx context.Context, d Deps, o Options) (Summary, error) {
 	containers, err := scanTargets(d, o)
 	if err != nil {
 		return sum, err
+	}
+
+	if o.Reindex {
+		if err := store.ResetAllSessionText(d.DB); err != nil {
+			return sum, fmt.Errorf("scan: reset full-text index: %w", err)
+		}
 	}
 
 	live, err := claudedata.LiveSessions(d.Home, claudedata.PIDAlive)
@@ -143,6 +151,7 @@ func Scan(ctx context.Context, d Deps, o Options) (Summary, error) {
 			sum.Worktrees++
 			sum.Sessions += res.sessions
 			sum.TasksImported += res.tasksImported
+			sum.Indexed += res.indexed
 			sum.Warnings = append(sum.Warnings, res.warnings...)
 		}
 
@@ -193,6 +202,7 @@ func fetchContainer(ctx context.Context, r execx.Runner, container string) error
 type worktreeResult struct {
 	sessions      int
 	tasksImported int
+	indexed       int
 	warnings      []string
 }
 
@@ -375,6 +385,12 @@ func scanClaudeData(d Deps, worktreeID int64, worktreePath string, res *worktree
 			}
 			res.sessions++
 			candidates = append(candidates, c)
+
+			n, err := indexSessionText(d, sid, filepath.Join(projectDir, e.Name()), existingByID[sid].IndexedBytes)
+			if err != nil {
+				res.warnings = append(res.warnings, err.Error())
+			}
+			res.indexed += n
 		}
 	case !os.IsNotExist(err):
 		res.warnings = append(res.warnings, fmt.Sprintf("read claude project dir %s: %v", projectDir, err))
@@ -390,6 +406,12 @@ func scanClaudeData(d Deps, worktreeID int64, worktreePath string, res *worktree
 			continue // jsonl still present: index is a fallback only for pruned sessions.
 		}
 		fallbackSessionIDs[e.SessionID] = true
+
+		if prior := existingByID[e.SessionID]; prior.IndexedBytes > 0 {
+			if err := store.ResetSessionText(d.DB, e.SessionID); err != nil {
+				return nil, fmt.Errorf("drop index for pruned session %s: %w", e.SessionID, err)
+			}
+		}
 
 		if err := store.UpsertSessionScan(d.DB, store.SessionScan{
 			SessionID:    e.SessionID,
@@ -478,6 +500,49 @@ func scanOneJSONL(d Deps, worktreeID int64, projectDir, sessionID, path string, 
 		aiTitle:      facts.AITitle,
 		firstPrompt:  facts.FirstPrompt,
 	}, nil
+}
+
+// indexSessionText appends sessionID's not-yet-indexed transcript messages
+// to the full-text index, per the find/where spec's incremental rules: a
+// file shorter than the marker was rewritten (drop and restart), an equal
+// size means nothing new, otherwise stream from the marker. Only complete
+// lines advance the marker (claudedata.Messages), so a transcript mid-write
+// is picked up whole next scan. A build without FTS5 indexes nothing. Every
+// failure is returned for the caller to record as a warning — indexing
+// never fails a scan, and the marker is left untouched for a retry.
+func indexSessionText(d Deps, sessionID, path string, indexed int64) (int, error) {
+	if !d.DB.FTS {
+		return 0, nil
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return 0, fmt.Errorf("index %s: stat: %w", sessionID, err)
+	}
+	size := info.Size()
+	if size < indexed {
+		if err := store.ResetSessionText(d.DB, sessionID); err != nil {
+			return 0, fmt.Errorf("index %s: %w", sessionID, err)
+		}
+		indexed = 0
+	}
+	if size == indexed {
+		return 0, nil
+	}
+	msgs, next, err := claudedata.Messages(path, indexed)
+	if err != nil {
+		return 0, fmt.Errorf("index %s: %w", sessionID, err)
+	}
+	if next == indexed {
+		return 0, nil // only a partial trailing line so far
+	}
+	rows := make([]store.SessionText, len(msgs))
+	for i, m := range msgs {
+		rows[i] = store.SessionText{SessionID: sessionID, Role: m.Role, TS: m.Timestamp, Body: m.Body}
+	}
+	if err := store.AppendSessionText(d.DB, sessionID, rows, next); err != nil {
+		return 0, fmt.Errorf("index %s: %w", sessionID, err)
+	}
+	return len(rows), nil
 }
 
 // importSessionTasks imports sessionID's ~/.claude/tasks/<sessionID>/*.json

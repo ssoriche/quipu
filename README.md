@@ -139,7 +139,7 @@ quipu init [path]
     Register a bare-layout container (path, or detected by walking up from
     cwd) and run an implicit scan.
 
-quipu scan [--fetch] [--forge] [--worktree <w>]
+quipu scan [--fetch] [--forge] [--worktree <w>] [--reindex]
     Rediscover every registered container's worktrees, classify their
     lifecycle state, and mine each one's Claude Code data (jsonl
     transcripts, sessions-index.json, task files, the live-session
@@ -147,6 +147,10 @@ quipu scan [--fetch] [--forge] [--worktree <w>]
     a failure is a warning, not an error). --forge enables the `gh pr view`
     pr-closed check (one network call per worktree). --worktree scans only
     that worktree instead of every worktree in every registered container.
+    --reindex drops the full-text index (used by `quipu find`) and rebuilds
+    it. Indexing is incremental and on by default: each scan indexes only
+    transcript bytes appended since the last one. --reindex is global (it
+    rebuilds the whole index) and cannot be combined with --worktree.
     Progress prints to stderr as it goes: in place if stderr is a TTY, one
     summary line per phase otherwise.
 
@@ -154,10 +158,35 @@ quipu list [--state s] [--container c] [--json]
     Table: NAME STATE DIRTY PURPOSE TASKS LIVE LAST-ACTIVITY, sorted by
     lifecycle state (merged, pr-closed, gone, stale, error, detached,
     active, protected, missing) then recency. A missing worktree with open
-    tasks gets "!" after its task count — the lost-work signal.
+    tasks gets "!" after its task count — the lost-work signal. LIVE shows
+    the visible WezTerm tab position(s) of a located live session, e.g.
+    `tab7` or `tab7,tab9` for two sessions, or the bare `live` marker when
+    it's running but can't be tied to a pane.
 
 quipu show <w> [--json]
     One worktree's full detail: sessions, tasks, events.
+
+quipu find <query...> [--limit n] [--since 30d] [-w <w>] [--json]
+    Full-text search over indexed Claude transcripts (user prompts and
+    assistant replies; tool output is never indexed). The query is FTS5
+    syntax: bare words are ANDed, "batch 2" is a phrase, spark* a prefix,
+    linkerd NEAR flow a proximity match. One row per matching session,
+    best match first, with a highlighted one-line snippet under each:
+    SESSION WORKTREE STATE HITS LAST-ACTIVITY WHERE TITLE. WHERE is the
+    live session's `w0 tab7 "title"` (see `quipu where`). --since takes
+    30d / 2w / 12h. Exit 1 on an FTS5 syntax error, 2 if this sqlite build
+    lacks FTS5.
+
+quipu where [<w> | --session <id>] [--focus] [--json]
+    Where a worktree's live Claude session is on screen: path and branch,
+    then per live session its id/title, pid/status, and
+    `window 0 · tab 7 (of 17) · "<tab title>" · pane 25` — tab is the
+    VISIBLE 1-based position, not WezTerm's internal tab id. Not live:
+    prints the `claude --resume <sid>` command instead (exit 0). Works
+    without WezTerm running (reports "no wezterm pane found"). Exit 3 when
+    the worktree/session is unknown to quipu. --focus activates that tab
+    and pane in WezTerm; it requires exactly one located session,
+    otherwise lists the candidates and exits 1.
 
 quipu task add <subject> [--desc <text>] [--priority 0-3] [-w w]
 quipu task list [--status s] [-w w]
@@ -304,12 +333,16 @@ This worktree is tracked by quipu. At the start of a session, run
 
 SQLite at `~/.local/state/quipu/quipu.db` (WAL mode, foreign keys on,
 `busy_timeout=5000ms` so concurrent hook invocations retry instead of
-failing). Override per-invocation with `--db <path>`. Five tables:
-`containers`, `worktrees`, `sessions`, `tasks`, `events` — see
-`docs/superpowers/specs/2026-08-27-quipu-design.md`'s "Data model" section
-for the full schema and the rules governing it (manual purpose is sticky;
-missing worktrees keep their history; `quipu forget` is the only way to
-discard it).
+failing). Override per-invocation with `--db <path>`. Six tables:
+`containers`, `worktrees`, `sessions`, `tasks`, `events`, plus an FTS5
+virtual table `session_text` holding indexed transcript text (user
+prompts and assistant replies only) for `quipu find`;
+`sessions.indexed_bytes` is the per-transcript append-only indexing marker
+— see `docs/superpowers/specs/2026-08-27-quipu-design.md`'s "Data model"
+section for the full schema and the rules governing it (manual purpose is
+sticky; missing worktrees keep their history; `quipu forget` is the only
+way to discard it), and `docs/superpowers/specs/2026-09-14-find-and-where-design.md`
+for the v2 additions (`session_text`, `indexed_bytes`).
 
 ## Relationship to reclaude and git.fish
 
@@ -339,7 +372,9 @@ real registered container:
 1. `quipu ui` opens and shows a populated table (NAME STATE DIRTY LIVE
    TASKS PURPOSE LAST ACTIVITY) with state colours (active green,
    merged/gone/pr-closed dim, stale yellow, error/missing red) and `*` on
-   dirty rows.
+   dirty rows. LIVE shows `tab7` (the located WezTerm tab index) for a
+   located live session, or the bare `live` marker when it's running but
+   unlocated.
 2. `↑`/`↓` move the selection; the highlighted row is visually obvious.
 3. `enter` opens the detail pane (purpose, latest away-summary, the exact
    resume command, open tasks, recent events); `esc` returns to the table.
@@ -353,3 +388,10 @@ real registered container:
    worktree and reports each one; `n`/`esc` cancels with no side effects.
 8. `s` shows a spinner while rescanning and refreshes the table afterward.
 9. `q` quits cleanly from both the table and the detail pane.
+10. `?` opens the find prompt; typing a query and `enter` narrows the table
+    to worktrees whose transcripts match, with the hit count in the status
+    line; `enter` on a row then shows the matching snippets under "find
+    hits:"; `esc` from the table clears the find.
+11. `g` on a row with exactly one located live session activates its
+    WezTerm tab; on zero or two it reports the count in the status line
+    instead.
