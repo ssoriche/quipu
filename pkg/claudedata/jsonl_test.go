@@ -191,8 +191,8 @@ func TestMessagesIncrementalStopsBeforePartialLine(t *testing.T) {
 	}
 
 	f, _ := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o644)
-	f.WriteString(line2 + partial)
-	f.Close()
+	_, _ = f.WriteString(line2 + partial)
+	_ = f.Close()
 	msgs, off2, err := Messages(path, off1)
 	if err != nil || len(msgs) != 1 || msgs[0].Body != "second" {
 		t.Fatalf("pass 2: msgs=%+v err=%v (must see only the new complete line)", msgs, err)
@@ -202,8 +202,8 @@ func TestMessagesIncrementalStopsBeforePartialLine(t *testing.T) {
 	}
 
 	f, _ = os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o644)
-	f.WriteString(`rd"}}` + "\n")
-	f.Close()
+	_, _ = f.WriteString(`rd"}}` + "\n")
+	_ = f.Close()
 	msgs, off3, err := Messages(path, off2)
 	if err != nil || len(msgs) != 1 || msgs[0].Body != "third" {
 		t.Fatalf("pass 3: msgs=%+v err=%v", msgs, err)

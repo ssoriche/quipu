@@ -40,7 +40,7 @@ func runFind(e env, args []string) int {
 	if err != nil {
 		return errf(e, 2, "%v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	if *wFlag != "" {
 		w, err := resolveWorktree(db, e, *wFlag)
@@ -80,10 +80,10 @@ func findWithDB(e env, db *store.DB, q store.SearchQuery, asJSON bool) int {
 		rows = append(rows, []string{h.SessionID, h.WorktreeName, h.State, strconv.Itoa(h.Hits), h.LastActivity, where, hitTitle(h)})
 	}
 	lines := alignRows(rows)
-	fmt.Fprintln(e.stdout, lines[0])
+	_, _ = fmt.Fprintln(e.stdout, lines[0])
 	for i, h := range hits {
-		fmt.Fprintln(e.stdout, lines[i+1])
-		fmt.Fprintf(e.stdout, "    %s\n", oneLine(h.Snippet, 140))
+		_, _ = fmt.Fprintln(e.stdout, lines[i+1])
+		_, _ = fmt.Fprintf(e.stdout, "    %s\n", oneLine(h.Snippet, 140))
 	}
 	return 0
 }

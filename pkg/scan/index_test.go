@@ -61,8 +61,8 @@ func TestScanIndexesTranscriptIncrementally(t *testing.T) {
 	}
 
 	f, _ := os.OpenFile(jsonl, os.O_APPEND|os.O_WRONLY, 0o644)
-	f.WriteString(reply)
-	f.Close()
+	_, _ = f.WriteString(reply)
+	_ = f.Close()
 	sum, err = Scan(context.Background(), d, Options{Container: container})
 	if err != nil {
 		t.Fatalf("Scan #2: %v", err)
@@ -127,7 +127,7 @@ func TestScanDropsIndexForPrunedTranscript(t *testing.T) {
 	if countSessionText(t, db, "sess-gone") != 1 {
 		t.Fatalf("expected 1 indexed row before pruning")
 	}
-	os.Remove(jsonl)
+	_ = os.Remove(jsonl)
 	if _, err := Scan(context.Background(), d, Options{Container: container}); err != nil {
 		t.Fatalf("Scan #2: %v", err)
 	}

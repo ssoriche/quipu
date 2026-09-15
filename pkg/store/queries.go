@@ -800,13 +800,13 @@ func AppendSessionText(db *DB, sessionID string, msgs []SessionText, indexedByte
 	if err != nil {
 		return fmt.Errorf("store: begin index %s: %w", sessionID, err)
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	stmt, err := tx.Prepare(`INSERT INTO session_text(session_id, role, ts, body) VALUES(?, ?, ?, ?)`)
 	if err != nil {
 		return fmt.Errorf("store: prepare index insert: %w", err)
 	}
-	defer stmt.Close()
+	defer func() { _ = stmt.Close() }()
 	for _, m := range msgs {
 		if _, err := stmt.Exec(sessionID, m.Role, m.TS, m.Body); err != nil {
 			return fmt.Errorf("store: index message for %s: %w", sessionID, err)
@@ -828,7 +828,7 @@ func ResetSessionText(db *DB, sessionID string) error {
 	if err != nil {
 		return fmt.Errorf("store: begin reset index %s: %w", sessionID, err)
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	if db.FTS {
 		if _, err := tx.Exec(`DELETE FROM session_text WHERE session_id=?`, sessionID); err != nil {
 			return fmt.Errorf("store: delete index rows for %s: %w", sessionID, err)
@@ -850,7 +850,7 @@ func ResetAllSessionText(db *DB) error {
 	if err != nil {
 		return fmt.Errorf("store: begin reindex: %w", err)
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	if db.FTS {
 		if _, err := tx.Exec(`DELETE FROM session_text`); err != nil {
 			return fmt.Errorf("store: clear index: %w", err)
@@ -935,7 +935,7 @@ func SearchSessions(db *DB, q SearchQuery) ([]SearchHit, error) {
 		}
 		return nil, fmt.Errorf("store: search %q: %w", q.Query, err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var out []SearchHit
 	for rows.Next() {
